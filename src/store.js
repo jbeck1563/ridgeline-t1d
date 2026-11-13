@@ -156,6 +156,13 @@ export function initDb(dbPath = process.env.OMNI_DB_PATH || '/data/omni-endo.db'
       platform  TEXT,
       PRIMARY KEY (day_local, type)
     );
+    -- Tandem pump settings pasted from t:connect (src/tandem-settings.js). Additive,
+    -- user-entered and not re-pullable: never in the self-heal wipe below.
+    CREATE TABLE IF NOT EXISTS pump_settings_upload (
+      upload_local TEXT PRIMARY KEY,  -- 'YYYY-MM-DDTHH:MM', pump-local upload time
+      json         TEXT NOT NULL,     -- the parsed snapshot
+      imported_at  INTEGER NOT NULL   -- epoch seconds
+    );
   `);
 
   // Self-heal: if this archive was written by an older schema, its tables for
@@ -742,6 +749,32 @@ export function getHealth(startLocal, endLocal) {
     )
     .all(dayOf(startLocal), dayOf(endLocal));
   return { samples, sessions, daily };
+}
+
+// --- Pasted Tandem pump settings ------------------------------------------
+
+/** Store a parsed snapshot. Returns false (and changes nothing) when that upload is already stored. */
+export function savePumpSettings(snapshot) {
+  const r = d()
+    .prepare('INSERT OR IGNORE INTO pump_settings_upload (upload_local, json, imported_at) VALUES (?, ?, ?)')
+    .run(snapshot.uploadDate, JSON.stringify(snapshot), Math.floor(Date.now() / 1000));
+  return r.changes === 1;
+}
+
+/** Stored upload stamps, newest first. */
+export function listPumpSettingsUploads() {
+  return d()
+    .prepare('SELECT upload_local FROM pump_settings_upload ORDER BY upload_local DESC')
+    .all()
+    .map((r) => r.upload_local);
+}
+
+/** The latest snapshot uploaded at or before `atLocal` ('YYYY-MM-DDTHH:MM'), or null. */
+export function getPumpSettingsAt(atLocal) {
+  const row = d()
+    .prepare('SELECT json FROM pump_settings_upload WHERE upload_local <= ? ORDER BY upload_local DESC LIMIT 1')
+    .get(atLocal);
+  return row ? JSON.parse(row.json) : null;
 }
 
 // Test helper: wipe everything.

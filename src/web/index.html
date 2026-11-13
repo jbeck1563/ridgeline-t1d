@@ -28,7 +28,7 @@
   h3 { margin: 16px 0 8px; font-size: .95rem; }
   .row { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; }
   label { display: flex; flex-direction: column; gap: 4px; font-size: .8rem; color: var(--muted); }
-  input, button { font: inherit; padding: 7px 10px; border-radius: 7px; border: 1px solid var(--line); background: var(--card); color: var(--ink); }
+  input, button, textarea { font: inherit; padding: 7px 10px; border-radius: 7px; border: 1px solid var(--line); background: var(--card); color: var(--ink); }
   button { cursor: pointer; }
   button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
   .muted { color: var(--muted); }
@@ -55,6 +55,10 @@
   .chart { display: block; width: 100%; height: auto; margin: 8px 0; }
   .hidden { display: none; }
   .err { color: var(--low); }
+  textarea { width: 100%; font: .8rem/1.4 ui-monospace, monospace; resize: vertical; }
+  .badge { font-size: .75rem; background: var(--ok); color: var(--card); border-radius: 4px; padding: 1px 6px; margin-left: 6px; vertical-align: middle; }
+  .uploads { list-style: none; padding: 0; margin: 8px 0; display: flex; flex-wrap: wrap; gap: 6px; }
+  .uploads button.on { border-color: var(--accent); color: var(--accent); }
 </style>
 </head>
 <body>
@@ -149,6 +153,17 @@
       <p class="small muted" id="xStatus">Glucose timeline is limited to 21 days, the bolus log to 92.</p>
     </section>
   </div>
+
+  <section id="pumpSection">
+    <h2>Pump settings <span class="muted small">(pasted from t:connect)</span></h2>
+    <p class="small muted">Glooko does not receive Tandem profile settings. On the t:connect web pump settings view, copy all of the text and paste it here. Your name, date of birth, pump serial number and CGM transmitter ID are dropped before anything is stored.</p>
+    <textarea id="paste" rows="7" placeholder="Paste the copied pump settings text here" aria-label="Copied pump settings text"></textarea>
+    <div class="row"><button class="primary" id="import">Import</button></div>
+    <p id="pumpStatus" class="small muted"></p>
+    <h3>Stored uploads</h3>
+    <ul class="uploads" id="uploads"></ul>
+    <div id="pumpView"></div>
+  </section>
 </main>
 <script>
 'use strict';
@@ -354,6 +369,89 @@ function renderSettings(s) {
   $('settings').innerHTML = blocks.length
     ? blocks.map((b) => `<h3>Effective ${esc(b.effective)}</h3><dl>${dl(b.rows)}</dl>`).join('')
     : `<p class="muted">${esc(s.settingsNote || 'No pump settings stored for this window.')}</p>`;
+}
+
+// --- pasted pump settings ------------------------------------------------------
+
+const yesNo = (v) => (v == null ? null : v ? 'On' : 'Off');
+const labelOf = (k) => k.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/^./, (c) => c.toUpperCase());
+const kvRows = (o) => Object.entries(o || {}).map(([k, v]) => [labelOf(k), v ?? '—']);
+
+function profileTable(p, u) {
+  // One row per start time used by any of the four schedules, each showing the value in force then.
+  const cols = [['basal', 'unitsPerHour'], ['correctionFactor', 'glucosePerUnit'], ['carbRatio', 'gramsPerUnit'], ['targetBg', 'value']];
+  const starts = [...new Set(cols.flatMap(([k]) => p[k].map((x) => x.start)))].sort((a, b) => a - b);
+  const at = (list, t, f) => { const x = list.findLast((s) => s.start <= t); return x ? x[f] : null; };
+  const hhmm = (t) => `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`;
+  return `<div class="scroll"><table><tr><th>From</th><th>Basal U/h</th><th>Correction 1 U :</th><th>Carb ratio 1 U :</th><th>Target</th></tr>` +
+    starts.map((t) => `<tr><td>${hhmm(t)}</td><td>${esc(at(p.basal, t, 'unitsPerHour') ?? '—')}</td><td>${esc(at(p.correctionFactor, t, 'glucosePerUnit') ?? '—')} ${esc(u)}</td><td>${esc(at(p.carbRatio, t, 'gramsPerUnit') ?? '—')} g</td><td>${esc(at(p.targetBg, t, 'value') ?? '—')} ${esc(u)}</td></tr>`).join('') +
+    `</table></div><dl>${dl([
+      ['Total daily basal (as stated)', p.totalDailyBasal != null ? `${p.totalDailyBasal} U` : null],
+      ['Insulin duration', p.insulinDurationHours != null ? `${p.insulinDurationHours} h` : null],
+      ['Carbohydrates', yesNo(p.carbohydrates)],
+    ])}</dl>`;
+}
+
+function renderPumpSettings(snap, uploads) {
+  $('uploads').innerHTML = uploads.length
+    ? uploads.map((u) => `<li><button data-upload="${esc(u)}" class="${snap?.uploadDate === u ? 'on' : ''}">${esc(u.replace('T', ' '))}</button></li>`).join('')
+    : '<li class="small muted">None yet.</li>';
+  document.querySelectorAll('[data-upload]').forEach((b) => (b.onclick = () => loadPumpSettings(b.dataset.upload)));
+  if (!snap) { $('pumpView').innerHTML = ''; return; }
+  const u = snap.glucoseUnit || '';
+  const c = snap.controlIq;
+  const ciq = c && [
+    ['Control-IQ', yesNo(c.enabled)],
+    ['Weight', c.weight ? `${c.weight.value} ${c.weight.unit || ''}` : null],
+    ['Total daily insulin', c.totalDailyInsulin != null ? `${c.totalDailyInsulin} U` : null],
+    ...(c.sleepSchedules || []).map((x) => [`Sleep: ${x.name}`, `${x.start}–${x.end} ${yesNo(x.enabled)}`]),
+    ['Insulin duration', c.insulinDurationHours != null ? `${c.insulinDurationHours} h` : null],
+    ['Target BG', c.targetBg ? `${c.targetBg.value} ${c.targetBg.unit || ''}` : null],
+  ];
+  const warn = snap.warnings || [];
+  $('pumpView').innerHTML =
+    `<p class="small">Uploaded ${esc(snap.uploadDate.replace('T', ' '))} (pump clock)${snap.pump ? ` · ${esc(snap.pump.model)} ${esc(snap.pump.firmware)}` : ''}</p>` +
+    snap.profiles.map((p) => `<h3>${esc(/^\d+$/.test(p.name) ? `Profile ${p.name}` : p.name)}${p.active ? '<span class="badge">Active at upload</span>' : ''}</h3>${profileTable(p, u)}`).join('') +
+    `<div class="grid2">` +
+    (ciq ? `<div><h3>Control-IQ</h3><dl>${dl(ciq)}</dl></div>` : '') +
+    (snap.cgm ? `<div><h3>CGM</h3><dl>${dl(kvRows(snap.cgm))}</dl></div>` : '') +
+    (snap.general ? `<div><h3>General</h3><dl>${dl(kvRows(snap.general))}</dl></div>` : '') +
+    (snap.alerts ? `<div><h3>Alerts &amp; reminders</h3><dl>${dl(kvRows(snap.alerts))}</dl></div>` : '') +
+    `</div>` +
+    (warn.length ? `<h3>Lines not understood</h3><ul class="small">${warn.map((w) => `<li>${esc(w)}</li>`).join('')}</ul>` : '') +
+    `<p class="caveat">Settings as programmed on the pump at upload. Discuss with your endocrinologist before changing settings.</p>`;
+}
+
+async function loadPumpSettings(at) {
+  try {
+    const r = await getJson('/api/pump-settings' + (at ? `?at=${encodeURIComponent(at)}` : ''));
+    renderPumpSettings(r.snapshot, r.uploads);
+  } catch (e) {
+    $('pumpStatus').innerHTML = `<span class="err">Error: ${esc(e.message)}</span>`;
+  }
+}
+
+async function importPaste() {
+  const text = $('paste').value;
+  if (!text.trim()) { $('pumpStatus').textContent = 'Paste the copied settings text first.'; return; }
+  $('import').disabled = true;
+  $('pumpStatus').textContent = 'Importing…';
+  try {
+    const res = await fetch(new URL('/api/pump-settings', location.origin), {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify({ text }),
+    });
+    let body = null;
+    try { body = await res.json(); } catch { /* proxy error page */ }
+    if (!res.ok) throw new Error(body?.error || `HTTP ${res.status}`);
+    const n = body.snapshot.profiles.length;
+    $('pumpStatus').textContent = `${body.saved ? 'Saved' : 'Already stored, nothing changed'}: upload ${body.snapshot.uploadDate.replace('T', ' ')}, ${n} profile${n === 1 ? '' : 's'}, ${body.snapshot.warnings.length} line(s) not understood.`;
+    $('paste').value = '';
+    renderPumpSettings(body.snapshot, body.uploads);
+  } catch (e) {
+    $('pumpStatus').innerHTML = `<span class="err">Error: ${esc(e.message)}</span>`;
+  } finally {
+    $('import').disabled = false;
+  }
 }
 
 // --- the copy-paste prompt -----------------------------------------------------
@@ -571,6 +669,8 @@ function setPreset(days) {
 document.querySelectorAll('[data-days]').forEach((b) => (b.onclick = () => { setPreset(+b.dataset.days); load(); }));
 document.querySelectorAll('[data-export]').forEach((b) => (b.onclick = () => download(b.dataset.export)));
 $('load').onclick = load;
+$('import').onclick = importPaste;
+loadPumpSettings();
 $('copy').onclick = async () => {
   try { await navigator.clipboard.writeText($('prompt').textContent); $('copy').textContent = 'Copied'; }
   catch { $('copy').textContent = 'Copy failed: select the text below'; }

@@ -49,7 +49,7 @@ import {
 } from './analytics.js';
 import { PERSONA_PROMPT } from './prompt.js';
 import { ensureHealthFresh, bucketHealth, healthSources } from './health.js';
-import { getHealth } from './store.js';
+import { getHealth, getPumpSettingsAt, listPumpSettingsUploads } from './store.js';
 
 /**
  * The server's configured glucose unit and low/high boundaries (OMNI_UNITS,
@@ -897,6 +897,50 @@ server.registerTool(
     } catch (err) {
       return errorResult(err.message);
     }
+  }
+);
+
+// --- get_pump_settings ----------------------------------------------------
+server.registerTool(
+  'get_pump_settings',
+  {
+    title: 'Tandem pump profile settings (pasted from t:connect)',
+    description:
+      'The Tandem pump settings the user pasted in from t:connect (Glooko does ' +
+      'not carry them): every pump profile (name, active flag, basal / ' +
+      'correction factor / carb ratio / target BG segments with pump-local start ' +
+      'times, insulin duration, carbs on/off, stated total daily basal), ' +
+      'Control-IQ settings (weight, total daily insulin, sleep schedules, ' +
+      'insulin duration, target), CGM alerts, general settings and alerts. ' +
+      'Returns the snapshot in effect at `at` (the latest upload on or before ' +
+      'it; omit for the latest) plus every stored upload date. Glucose units are ' +
+      'as printed by the pump. Upload times are the pump clock, not UTC.\n\n' +
+      'These are the programmed settings as uploaded, not a measurement. Never ' +
+      'present a new setting value as an instruction; relay the caveat.\n\n' +
+      'Returns: caveat, at, snapshot (null if none stored by then), uploads.',
+    inputSchema: {
+      at: z
+        .string()
+        .optional()
+        .describe(
+          'Optional. Pump-local date YYYY-MM-DD (whole day counts) or date-time ' +
+            'YYYY-MM-DDTHH:MM. Omit for the latest upload.'
+        ),
+    },
+  },
+  async ({ at }) => {
+    if (at != null && !/^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2})?$/.test(at)) {
+      return errorResult('at must be YYYY-MM-DD or YYYY-MM-DDTHH:MM (pump-local time).');
+    }
+    const key = at == null ? '9999-12-31T23:59' : at.length === 10 ? `${at}T23:59` : at;
+    return jsonResult({
+      caveat:
+        'Settings as programmed on the pump at upload time. Discuss with your ' +
+        'endocrinologist before changing settings.',
+      at: at ?? null,
+      snapshot: getPumpSettingsAt(key),
+      uploads: listPumpSettingsUploads(),
+    });
   }
 );
 
