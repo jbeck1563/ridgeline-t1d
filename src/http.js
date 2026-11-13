@@ -36,7 +36,8 @@ import { createServer, glucoseDefaults } from './server.js';
 import { glookoConfigured } from './range.js';
 import { fetchGlookoRange } from './glooko.js';
 import { ensureFreshOnFirstCall } from './sync.js';
-import { initDb, getEarliestCgmEpoch, getLatestCgmEpoch, getMeta } from './store.js';
+import { initDb, getEarliestCgmEpoch, getLatestCgmEpoch, getMeta, savePumpSettings } from './store.js';
+import { parseTandemSettings } from './tandem-settings.js';
 
 const PORT = parseInt(process.env.OMNI_HTTP_PORT || '3000', 10);
 const HOST = process.env.OMNI_HTTP_HOST || '127.0.0.1';
@@ -111,6 +112,24 @@ function readBody(req) {
       } catch (err) {
         reject(err);
       }
+    });
+    req.on('error', reject);
+  });
+}
+
+// Read a small request body as UTF-8 text, refusing more than `max` bytes
+// (rejects with err.tooLarge; the rest of the upload is drained, not kept).
+function readSmallText(req, max) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let size = 0;
+    req.on('data', (c) => {
+      size += c.length;
+      if (size <= max) chunks.push(c);
+    });
+    req.on('end', () => {
+      if (size > max) return reject(Object.assign(new Error('body too large'), { tooLarge: true }));
+      resolve(Buffer.concat(chunks).toString('utf8'));
     });
     req.on('error', reject);
   });
@@ -256,8 +275,35 @@ const EXPORTS = {
   hourly: (w) => callTool('get_hourly_trends', w),
 };
 
+// The t:connect settings text is ~3 KB; anything near this cap is not a paste.
+const PASTE_MAX_BYTES = 64 * 1024;
+
+// POST /api/pump-settings — { text } -> { saved, snapshot, uploads }. Parses the
+// pasted t:connect settings and stores them; the same upload twice is a no-op.
+async function importPumpSettings(req, res) {
+  let text;
+  try {
+    const body = JSON.parse(await readSmallText(req, PASTE_MAX_BYTES));
+    text = body?.text;
+  } catch (err) {
+    if (err.tooLarge) return sendJson(res, 413, { error: `Paste is over ${PASTE_MAX_BYTES / 1024} KB.` });
+    return badRequest(res, 'invalid JSON body');
+  }
+  if (typeof text !== 'string' || !text.trim()) return badRequest(res, 'text is required');
+  let snapshot;
+  try {
+    snapshot = parseTandemSettings(text);
+  } catch (err) {
+    return badRequest(res, err.message);
+  }
+  const saved = savePumpSettings(snapshot);
+  const { uploads } = await callTool('get_pump_settings', {});
+  return sendJson(res, 200, { saved, snapshot, uploads });
+}
+
 async function handleWeb(req, res, url) {
-  if (req.method !== 'GET') return notFound(res);
+  const isImport = url.pathname === '/api/pump-settings' && req.method === 'POST';
+  if (req.method !== 'GET' && !isImport) return notFound(res);
   if (!basicGate(req, res, url.pathname)) return;
 
   if (url.pathname === '/') {
@@ -276,6 +322,13 @@ async function handleWeb(req, res, url) {
         device: JSON.parse(getMeta('device') || 'null'),
         archive: { earliest: iso(getEarliestCgmEpoch()), latest: iso(getLatestCgmEpoch()) },
       });
+    }
+
+    if (url.pathname === '/api/pump-settings') {
+      if (isImport) return await importPumpSettings(req, res);
+      const at = url.searchParams.get('at');
+      const out = await callTool('get_pump_settings', at ? { at } : {});
+      return sendJson(res, out.error ? 400 : 200, out);
     }
 
     const w = { start: url.searchParams.get('start'), end: url.searchParams.get('end') };

@@ -139,6 +139,29 @@ before changing settings", never a new setting value as an instruction.
 **Auth.** Same Basic credential and fail-closed rule as `/my-data` (`OMNI_MYDATA_BASIC`;
 503 when unset). `/mcp` and its Bearer are unchanged, and `/my-data` is unchanged.
 
+### 7. Pasted Tandem pump settings: `get_pump_settings`
+
+**What.** Glooko does not carry a Tandem pump's profile settings. t:connect web shows them
+on its pump settings page as copyable text. Paste that text into the **Pump settings** box on
+the report page and press Import: the server parses it and stores a snapshot keyed by the
+upload date-time printed on the page (pump clock). Each snapshot holds every profile (name,
+active flag, basal / correction factor / carb ratio / target BG segments, insulin duration,
+carbs on/off, stated total daily basal), Control-IQ settings (weight, total daily insulin,
+sleep schedules, insulin duration, target), CGM alerts, general settings and alerts. Units stay
+as printed (mmol/L or mg/dL). Lines the parser does not know are listed as warnings, not
+errors. Importing the same upload twice changes nothing.
+
+**Privacy.** The name, date of birth, pump serial number and CGM transmitter ID are dropped
+while parsing and never stored or logged.
+
+**How.** `POST /api/pump-settings` with `{ "text": "..." }` (same Basic credential as `/`,
+body capped at 64 KB) parses (`src/tandem-settings.js`) and stores into the
+`pump_settings_upload` table, which the schema self-heal never wipes.
+`GET /api/pump-settings[?at=]` and the MCP tool `get_pump_settings(at?)` return the snapshot in
+effect at `at` (pump-local `YYYY-MM-DD` or `YYYY-MM-DDTHH:MM`; the latest upload on or before
+it, or the latest overall) plus every stored upload date. Nothing else reads these settings
+yet. Snapshots cannot be edited or deleted from the page.
+
 ### Checks
 
 Run `npm ci` then each:
@@ -152,6 +175,10 @@ unlinked account.
 `get_controliq_review` (mode minutes per day, bolus split, flagged incomplete days).
 `node --no-warnings test-tdd.mjs` seeds five synthetic weeks (one partial) and checks
 `get_tdd_trend`: weekly means, flagged partial week, change, rolling mean, slope, proxies.
+`node --no-warnings test-pump-settings.mjs` parses a synthetic t:connect paste (CRLF,
+trailing spaces, three profiles, multi-segment schedules), checks identifiers are dropped and
+a repeat import is a no-op, and covers `get_pump_settings` and `/api/pump-settings` (401
+without the credential, 413 over the cap).
 `node --no-warnings test-web.mjs` covers the page and `/api/*`: 401 without the credential,
 200 and valid JSON with it from the synthetic fixture, and 503 without `OMNI_MYDATA_BASIC`.
 `node test-mydata.mjs` covers the payload shape, anonymous / wrong-credential /
