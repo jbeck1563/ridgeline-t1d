@@ -24,7 +24,9 @@ const DAY = 86400;
 // dailyRollUp caps: 90 days per call, 14 for active-minutes (API reference).
 const WINDOW_DAYS = 90;
 const ACTIVE_MINUTES_WINDOW_DAYS = 14;
-const TRAILING_SECONDS = 2 * DAY; // re-pull the last 2 days: late syncs from the phone
+// Re-read the last 14 days on every top-up: the phone can sync to Google Health days
+// late, after healthSyncedTo has already moved past those days. Upserts keep it idempotent.
+const TRAILING_SECONDS = 14 * DAY;
 export const HEALTH_STALE_SECONDS = 6 * 60 * 60;
 const MAX_PAGES = 200;
 
@@ -335,10 +337,12 @@ export function ensureHealthFresh(reqStartEpoch) {
         hint: err.hint ?? 'Showing stored health data only; ask again later to retry.',
         lastSuccessfulSync: last == null ? null : rfc3339(last),
       };
-    } finally {
-      inFlight = null;
     }
-  })();
+  })().finally(() => {
+    // Cleared here, not inside the body: a body with nothing to pull finishes
+    // synchronously, before inFlight is assigned, and would stay set forever.
+    inFlight = null;
+  });
   return inFlight;
 }
 

@@ -129,6 +129,30 @@ assert.deepStrictEqual(wk.health.weight, { medianKg: 80.3, weighIns: 2 });
 assert.deepStrictEqual(wk.health.steps, { total: 20000, perDay: 10000, days: 2 });
 assert.ok(week.notes.some((n) => /an hour off/.test(n)));
 
+// 4. Late sync: healthSyncedTo already advanced, yet a top-up re-reads ~5 days back; repeat adds no rows.
+{
+  const { DatabaseSync } = await import('node:sqlite');
+  const { setMeta } = await import('./src/store.js');
+  const { ensureHealthFresh } = await import('./src/health.js');
+  const raw = new DatabaseSync(process.env.OMNI_DB_PATH);
+  const count = () => ['health_sample', 'health_session', 'health_daily'].map((t) => raw.prepare(`SELECT COUNT(*) n FROM ${t}`).get().n);
+  for (const t of ['health_sample', 'health_session', 'health_daily']) raw.exec(`DELETE FROM ${t}`);
+  const now = Date.parse('2001-03-15T12:00:00Z');
+  const realNow = Date.now;
+  Date.now = () => now;
+  setMeta('healthSyncedTo', Math.floor(now / 1000) - 12 * 3600); // advanced to 03-15 00:00, stale by 12 h
+  const top = await ensureHealthFresh(0);
+  assert.strictEqual(top.ok, true);
+  const [s1, , d1] = count();
+  assert.ok(s1 > 0 && d1 > 0, 'sample ~5 days before healthSyncedTo ingested');
+  assert.ok(getHealth(Date.parse(start) / 1000, Date.parse(end) / 1000).samples.some((x) => x.type === 'body_fat'));
+  const once = count();
+  setMeta('healthSyncedTo', Math.floor(now / 1000) - 7 * 3600); // stale again, forces a second top-up
+  await ensureHealthFresh(0);
+  assert.deepStrictEqual(count(), once, 'repeat top-up adds no duplicates');
+  Date.now = realNow;
+}
+
 console.log('OK: Google Health ingest and get_health_context');
 execFileSync(process.execPath, ['--no-warnings', import.meta.filename], {
   env: { ...process.env, OMNI_TEST_NOTLINKED: '1' },
