@@ -63,7 +63,7 @@ if (NOBASIC) {
 } else {
   // 1. Auth: 401 with a realm without a credential, wrong one, or the MCP Bearer.
   for (const h of [{}, { Authorization: 'Basic ' + Buffer.from('mcp:s3crey').toString('base64') }, { Authorization: 'Bearer test-token' }]) {
-    for (const p of ['/', '/api/config', `/api/report?${win}`]) {
+    for (const p of ['/', '/api/config', `/api/report?${win}`, `/api/trends?${win}`]) {
       const r = await get(p, h);
       assert.strictEqual(r.status, 401, `${p} ${JSON.stringify(h)}`);
       assert.match(r.headers.get('www-authenticate') || '', /^Basic realm="ridgeline"/);
@@ -77,6 +77,9 @@ if (NOBASIC) {
   const html = await page.text();
   assert.match(html, /<title>Ridgeline T1D<\/title>/);
   assert.ok(!/mmol\/L/.test(html), 'page must not hard-code a glucose unit');
+  for (const t of ['overview', 'patterns', 'days', 'trends', 'settings', 'ai']) {
+    assert.ok(html.includes(`href="#${t}"`) && html.includes(`id="tab-${t}"`), `tab ${t}`);
+  }
 
   // 3. Config: unit and archive span from the server.
   const cfg = await json('/api/config');
@@ -86,6 +89,8 @@ if (NOBASIC) {
   );
   assert.strictEqual(cfg.archive.earliest, '2001-03-10T00:00:00.000Z');
   assert.strictEqual(cfg.archive.latest, '2001-03-11T23:55:00.000Z');
+  // Wall-clock time of the seeding pull, for the page's "synced n min ago".
+  assert.ok(Date.now() - Date.parse(cfg.archive.syncedAt) < 120000, `syncedAt ${cfg.archive.syncedAt}`);
 
   // 4. Report: the same numbers the MCP tools return, automatic boluses included.
   const rep = await json(`/api/report?${win}`);
@@ -98,8 +103,18 @@ if (NOBASIC) {
   assert.strictEqual(rep.controlIq.summary.completeDays, 2);
   assert.match(rep.controlIq.caveat, /Discuss with your endocrinologist before changing settings/);
   assert.deepStrictEqual(rep.tddTrend.weeks.map((x) => [x.week, x.completeDays, x.included]), [['2001-03-05', 2, false]]);
+  // The one daily-insulin figure the page shows, with its basis.
+  assert.strictEqual(rep.tddTrend.windowMean.completeDays, 2);
+  assert.strictEqual(rep.tddTrend.windowMean.meanTdd, rep.tddTrend.weeks[0].meanTdd);
   const wk = rep.health.buckets.find((b) => b.health);
   assert.deepStrictEqual(wk.health.steps, { total: 20000, perDay: 10000, days: 2 });
+
+  // 4b. Trends: only the weekly parts, for the Trends tab's own (wider) window.
+  const tr = await json(`/api/trends?start=2001-02-10T00:00:00.000Z&end=2001-03-12T00:00:00.000Z`);
+  assert.deepStrictEqual(Object.keys(tr).sort(), ['health', 'tddTrend', 'window']);
+  assert.strictEqual(tr.tddTrend.windowMean.completeDays, 2);
+  assert.deepStrictEqual(tr.health.buckets.find((b) => b.health).health.steps, { total: 20000, perDay: 10000, days: 2 });
+  assert.strictEqual((await get('/api/trends')).status, 400);
 
   // 5. Exports: one per deep-dive file, each straight from its MCP tool.
   const tl = await json(`/api/export?type=timeline&${win}`);

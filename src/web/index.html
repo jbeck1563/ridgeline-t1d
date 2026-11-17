@@ -84,8 +84,6 @@
   #ground[aria-pressed="true"] { background: var(--color-accent-soft); border-color: var(--color-accent); }
   #device { margin: 0; flex-basis: 100%; color: var(--color-ink-2); font-family: var(--font-outlier); font-size: var(--text-sm); overflow-wrap: anywhere; }
   main.shell { display: grid; gap: var(--space-md); padding-bottom: var(--space-2xl); }
-  #report { display: grid; gap: var(--space-md); min-width: 0; }
-  #report.hidden { display: none; }
   section { color: var(--color-ink); background: var(--color-surface); border: var(--rule-hair) solid var(--color-rule); border-radius: var(--radius-card); box-shadow: var(--shadow-surface, none); padding: var(--space-md); min-width: 0; }
   @media (min-width: 48rem) { section { padding: var(--space-lg); } }
   h2 { font-size: var(--text-lg); margin-bottom: var(--space-sm); }
@@ -162,6 +160,31 @@
   .uploads button { font-family: var(--font-outlier); font-size: var(--text-sm); }
   .uploads button.on { border-color: var(--color-accent); box-shadow: inset 0 0 0 1px var(--color-accent); }
   ul.small { padding-left: var(--space-lg); overflow-wrap: anywhere; }
+  /* Tabs, range and freshness bar (step 3 of the interface exploration). */
+  :root { --sleep: oklch(68% 0.08 255); --exercise: oklch(72% 0.11 312); --manual: oklch(60% 0.01 160); --mode-auto: var(--color-paper-2); }
+  :root[data-theme="white"] { --sleep: oklch(55% 0.09 255); --exercise: oklch(52% 0.13 312); --manual: oklch(58% 0.01 160); --mode-auto: oklch(90% 0.012 160); }
+  .topbar { position: sticky; top: 0; z-index: 5; background: color-mix(in oklab, var(--color-paper) 90%, transparent); backdrop-filter: blur(8px); border-block: var(--rule-hair) solid var(--color-rule); }
+  .topbar .shell { display: flex; flex-wrap: wrap; gap: var(--space-xs) var(--space-md); align-items: center; justify-content: space-between; padding-block: var(--space-xs); }
+  .tabs { display: flex; gap: var(--space-3xs); overflow-x: auto; scrollbar-width: none; min-width: 0; }
+  .tabs a { display: inline-flex; align-items: center; min-height: 40px; padding: 0 var(--space-sm); border-radius: var(--radius-control); color: var(--color-muted); text-decoration: none; font-weight: 500; white-space: nowrap; }
+  .tabs a:hover { color: var(--color-ink); background: var(--color-surface); }
+  .tabs a[aria-current="page"] { color: var(--color-ink); background: var(--color-surface); box-shadow: inset 0 -2px 0 var(--color-accent); }
+  .range { display: flex; gap: var(--space-xs); align-items: center; }
+  .presets button[aria-pressed="true"], #customBtn[aria-expanded="true"] { background: var(--color-accent-soft); border-color: var(--color-accent); position: relative; z-index: 1; }
+  .custom { display: flex; flex-wrap: wrap; gap: var(--space-sm); align-items: end; flex-basis: 100%; justify-content: flex-end; }
+  .fresh { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2xs) var(--space-sm); margin: 0; padding-block: var(--space-sm) 0; font-size: var(--text-sm); color: var(--color-muted); }
+  .fresh b { color: var(--color-ink); font-weight: 500; }
+  .fresh .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); flex: none; }
+  .fresh .dot.stale { background: var(--high); }
+  .fresh button { min-height: 32px; padding: 0 var(--space-sm); font-size: var(--text-sm); }
+  @media (max-width: 40rem) { .topbar .shell { flex-direction: column; flex-wrap: nowrap; align-items: stretch; } .range { justify-content: space-between; } .presets button { min-width: 2.9rem; padding-inline: var(--space-xs); } .custom { justify-content: flex-start; } }
+  .panel { display: grid; gap: var(--space-md); min-width: 0; }
+  body:not(.loaded) .rep { display: none; }
+  .big { font-size: var(--text-sm); color: var(--color-muted); }
+  .big b { font-family: var(--font-outlier); font-weight: 500; font-size: var(--text-2xl); color: var(--color-ink); margin-right: var(--space-2xs); }
+  a { color: var(--color-accent); }
+  dt .sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; box-shadow: inset 0 0 0 1px var(--color-rule-2); }
+  #modeBar { box-shadow: inset 0 0 0 1px var(--color-rule-2); }
   @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition-duration: 0.01ms !important; } button:active { transform: none; } }
 </style>
 <script>try { if (localStorage.getItem('ridgeline-ground') === 'white') document.documentElement.dataset.theme = 'white'; } catch { /* storage blocked: stay on night */ }</script>
@@ -174,20 +197,25 @@
   <button type="button" id="ground" aria-pressed="false">Light mode</button>
   <p id="device">Loading…</p>
 </header>
+<div class="topbar"><div class="shell">
+  <nav class="tabs" aria-label="Views"><a href="#overview">Overview</a><a href="#patterns">Patterns</a><a href="#days">Days</a><a href="#trends">Trends</a><a href="#settings">Settings</a><a href="#ai">AI review</a></nav>
+  <div class="range">
+    <div class="presets" role="group" aria-label="Quick range"><button data-days="7">7 d</button><button data-days="14">14 d</button><button data-days="30">30 d</button><button data-days="90">90 d</button></div>
+    <button id="customBtn" aria-expanded="false" aria-controls="custom">Custom</button>
+  </div>
+  <div class="custom" id="custom" hidden>
+    <label>From <input type="date" id="start"></label>
+    <label>To (inclusive) <input type="date" id="end"></label>
+    <button class="primary" id="load">Load</button>
+  </div>
+</div></div>
+<div class="shell">
+  <p class="fresh"><span class="dot" id="freshDot" aria-hidden="true"></span><span id="fresh">Checking the archive…</span> <button id="refresh" hidden>Refresh</button></p>
+  <p id="status" class="small muted">Ready.</p>
+</div>
 <main class="shell">
-  <section>
-    <div class="row">
-      <label>From <input type="date" id="start"></label>
-      <label>To (inclusive) <input type="date" id="end"></label>
-      <div class="presets" role="group" aria-label="Quick range"><button data-days="7">7 d</button><button data-days="14">14 d</button><button data-days="30">30 d</button><button data-days="90">90 d</button></div>
-      <button class="primary" id="load">Load</button>
-      <button id="refresh" hidden>Refresh from Glooko</button>
-    </div>
-    <p id="status" class="small muted">Ready.</p>
-  </section>
-
-  <div id="report" class="hidden">
-    <section>
+  <div class="panel" id="tab-overview">
+    <section class="rep">
       <h2>Glucose <span class="sub muted" id="tirSub"></span></h2>
       <div class="lead-grid">
         <div class="chartbox" id="tirStack"></div>
@@ -197,29 +225,38 @@
       <dl id="bestWorst"></dl>
     </section>
 
-    <section>
-      <h2>Daily pattern <span class="sub muted" id="agpSub"></span></h2>
-      <div class="chartbox" id="agp"></div>
-      <p class="legend" id="agpLegend"></p>
+    <section class="rep">
+      <h2>Daily pattern <span class="sub muted" id="agpMiniSub"></span></h2>
+      <div class="chartbox" id="agpMini"></div>
+      <p class="small"><a href="#patterns">Full pattern with Control-IQ by hour →</a></p>
     </section>
 
-    <div class="grid2">
+    <div class="grid2 rep">
       <section>
         <h2>Insulin</h2>
+        <p class="big" id="tddBig"></p>
         <dl id="insulin"></dl>
         <h3>Boluses by type</h3>
         <dl id="bolusTypes"></dl>
       </section>
       <section>
         <h2 id="modesTitle">Mode time</h2>
+        <p class="small" id="ciqSummary"></p>
         <div class="bar" id="modeBar"></div>
         <dl id="modes"></dl>
       </section>
     </div>
+  </div>
 
-    <section id="ciqSection" class="hidden">
-      <h2>Control-IQ day review</h2>
-      <p class="small" id="ciqSummary"></p>
+  <div class="panel" id="tab-patterns" hidden>
+    <section class="rep">
+      <h2>Daily pattern <span class="sub muted" id="agpSub"></span></h2>
+      <div class="chartbox" id="agp"></div>
+      <p class="legend" id="agpLegend"></p>
+    </section>
+
+    <section id="ciqSection" class="rep hidden">
+      <h2>Control-IQ day review <span class="sub muted" id="ciqSub"></span></h2>
       <h3>Automatic correction boluses by hour <span class="sub">(pump clock, complete days only)</span></h3>
       <div class="hours" id="ciqHours"></div>
       <div class="hourlabels" id="ciqHourLabels"></div>
@@ -227,12 +264,22 @@
       <div class="scroll"><table id="ciqDays"></table></div>
       <p class="caveat" id="ciqCaveat"></p>
     </section>
+  </div>
 
+  <div class="panel" id="tab-days" hidden>
+    <section>
+      <h2>Days <span class="sub muted">Coming next</span></h2>
+      <p class="small muted">One row per day, newest first: the glucose line with boluses, carbs, automatic corrections and Sleep, Exercise and Manual mode, so you can see what happened on a given day. Until then, the per-day Control-IQ table is under Patterns.</p>
+    </section>
+  </div>
+
+  <div class="panel" id="tab-trends" hidden>
+    <p class="small muted" id="trendsNote"></p>
     <section id="tddSection" class="hidden">
       <h2>Weekly total daily dose</h2>
       <p class="small" id="tddSummary"></p>
       <svg id="tddChart" class="chart" role="img" aria-label="Weekly mean total daily dose"></svg>
-      <p class="small muted">Bars: weekly mean TDD (faded = under 5 complete days, left out of the trend). Line: 4-week rolling mean. Pick 90 d for a longer trend.</p>
+      <p class="small muted">Bars: weekly mean TDD (faded = under 5 complete days, left out of the trend). Line: 4-week rolling mean.</p>
       <div class="scroll"><table id="tddTable"></table></div>
       <p class="caveat" id="tddCaveat"></p>
     </section>
@@ -242,15 +289,31 @@
       <div class="scroll"><table id="healthTable"></table></div>
       <p class="small muted" id="healthNote"></p>
     </section>
+    <p class="small muted" id="trendsEmpty" hidden>No weekly insulin or health data in this window.</p>
+  </div>
 
-    <section>
-      <h2>Settings in force</h2>
-      <div id="settings"></div>
+  <div class="panel" id="tab-settings" hidden>
+    <section id="pumpSection">
+      <h2>Pump settings <span class="sub">(pasted from t:connect)</span></h2>
+      <p class="small muted">Glooko does not receive Tandem profile settings. On the t:connect web pump settings view, copy all of the text and paste it here. Your name, date of birth, pump serial number and CGM transmitter ID are dropped before anything is stored.</p>
+      <textarea id="paste" rows="7" placeholder="Paste the copied pump settings text here" aria-label="Copied pump settings text"></textarea>
+      <div class="row"><button class="primary" id="import">Import</button></div>
+      <p id="pumpStatus" class="small muted"></p>
+      <h3>Stored uploads</h3>
+      <ul class="uploads" id="uploads"></ul>
+      <div id="pumpView"></div>
     </section>
 
-    <section>
+    <section class="rep">
+      <h2>Settings in force <span class="sub muted" id="settingsSub"></span></h2>
+      <div id="settings"></div>
+    </section>
+  </div>
+
+  <div class="panel" id="tab-ai" hidden>
+    <section class="rep">
       <h2>AI review prompt</h2>
-      <p class="small muted">Copy this into a chat with an AI assistant (Claude, ChatGPT, Gemini). It carries the numbers above and the rules the reviewer must follow.</p>
+      <p class="small muted">Copy this into a chat with an AI assistant (Claude, ChatGPT, Gemini). It carries the numbers from this report and the rules the reviewer must follow.</p>
       <div class="row"><button class="primary" id="copy">Copy prompt</button></div>
       <details class="promptbox"><summary>Show the prompt text</summary><pre id="prompt"></pre></details>
     </section>
@@ -268,17 +331,6 @@
       <p class="small muted" id="xStatus">Glucose timeline is limited to 21 days, the bolus log to 92.</p>
     </section>
   </div>
-
-  <section id="pumpSection">
-    <h2>Pump settings <span class="sub">(pasted from t:connect)</span></h2>
-    <p class="small muted">Glooko does not receive Tandem profile settings. On the t:connect web pump settings view, copy all of the text and paste it here. Your name, date of birth, pump serial number and CGM transmitter ID are dropped before anything is stored.</p>
-    <textarea id="paste" rows="7" placeholder="Paste the copied pump settings text here" aria-label="Copied pump settings text"></textarea>
-    <div class="row"><button class="primary" id="import">Import</button></div>
-    <p id="pumpStatus" class="small muted"></p>
-    <h3>Stored uploads</h3>
-    <ul class="uploads" id="uploads"></ul>
-    <div id="pumpView"></div>
-  </section>
 </main>
 <script>
 'use strict';
@@ -296,6 +348,7 @@ const dl = (rows) => rows.filter((r) => r && r[1] != null).map(([k, v]) => `<dt>
 
 let config = null;
 let report = null;
+let trends = null; // { window, health, tddTrend, widened }
 
 async function getJson(path) {
   // location.origin, not a relative path: a page opened as http://user:pass@host/
@@ -389,14 +442,15 @@ function drawStack() {
   el.innerHTML = svgEl(W, H, out, `Time in ranges: ${BANDS.map((x) => `${x.label} ${num(b[x.k])} %`).join(', ')}`);
 }
 
-// AGP from get_agp: 96 smoothed 15-minute slots on the pump clock.
-function drawAgp() {
-  const a = report?.agp, el = $('agp');
+// AGP from get_agp: 96 smoothed 15-minute slots on the pump clock. Drawn in full
+// on Patterns (with its legend) and shorter on Overview (mini).
+function drawAgp(mini) {
+  const a = report?.agp, el = $(mini ? 'agpMini' : 'agp'), legend = mini ? null : $('agpLegend');
   const slots = a && !a.error ? a.slots.filter((x) => x.p50 != null) : [];
-  $('agpSub').textContent = a?.error ? `Unavailable: ${a.error}` : `Ambulatory glucose profile: all ${a?.readings?.toLocaleString('en') ?? 0} readings laid over one 24 h pump clock, smoothed 15 min slots`;
-  if (!slots.length) { el.innerHTML = a?.error ? '' : '<p class="small muted">No CGM readings in this window.</p>'; $('agpLegend').innerHTML = ''; return; }
+  $(mini ? 'agpMiniSub' : 'agpSub').textContent = a?.error ? `Unavailable: ${a.error}` : `Ambulatory glucose profile: all ${a?.readings?.toLocaleString('en') ?? 0} readings laid over one 24 h pump clock, smoothed 15 min slots`;
+  if (!slots.length) { el.innerHTML = a?.error ? '' : '<p class="small muted">No CGM readings in this window.</p>'; if (legend) legend.innerHTML = ''; return; }
   const c = a.consensusThresholds, mg = isMgdl();
-  const compact = innerWidth < 640, W = widthOf(el), H = compact ? 230 : 280, L = 40, R = 12, Tp = 10, B = 26;
+  const compact = mini || innerWidth < 640, W = widthOf(el), H = mini ? 190 : compact ? 230 : 280, L = 40, R = 12, Tp = 10, B = 26;
   const yMax = mg ? 324 : 18;
   const y = (v) => Tp + (1 - Math.min(v, yMax) / yMax) * (H - Tp - B);
   const x = (min) => L + (min / 1440) * (W - L - R);
@@ -409,30 +463,39 @@ function drawAgp() {
   s += T(L - 6, y(yMax) + 4, String(yMax), { anchor: 'end', size: 11 });
   for (let h = 0; h <= 24; h += 3) {
     s += `<line x1="${x(h * 60)}" x2="${x(h * 60)}" y1="${Tp}" y2="${H - B}" stroke="var(--line)" opacity="0.6"/>`;
-    if (!compact || h % 6 === 0) s += T(x(h * 60), H - 8, String(h).padStart(2, '0'), { anchor: 'middle', size: 11 });
+    if (!(compact && W < 640) || h % 6 === 0) s += T(x(h * 60), H - 8, String(h).padStart(2, '0'), { anchor: 'middle', size: 11 });
   }
   s += `<path d="${band('p5', 'p95')}" fill="var(--agp-outer)"/><path d="${band('p25', 'p75')}" fill="var(--agp-inner)"/>`;
   for (const k of ['p5', 'p95']) s += `<polyline points="${pts(k).join(' ')}" fill="none" stroke="var(--agp-edge)" stroke-dasharray="4 3"/>`;
   s += `<polyline points="${pts('p50').join(' ')}" fill="none" stroke="var(--color-ink)" stroke-width="2.25" stroke-linejoin="round"/>`;
   el.innerHTML = svgEl(W, H, s, 'Ambulatory glucose profile: median and percentile bands by time of day');
+  if (!legend) return;
   const f = (v) => num(v, mg ? 0 : 1);
-  $('agpLegend').innerHTML = `<span><i class="sw-line"></i>Median</span><span><i style="background:var(--agp-inner)"></i>25–75 % of readings</span><span><i style="background:var(--agp-outer)"></i>5–95 %</span><span><i style="background:var(--ok);opacity:.35"></i>Target ${f(c.low)}–${f(c.high)}</span><span><i class="sw-dash"></i>${f(c.veryLow)} and ${f(c.veryHigh)} ${esc(a.unit)}</span>`;
+  legend.innerHTML = `<span><i class="sw-line"></i>Median</span><span><i style="background:var(--agp-inner)"></i>25–75 % of readings</span><span><i style="background:var(--agp-outer)"></i>5–95 %</span><span><i style="background:var(--ok);opacity:.35"></i>Target ${f(c.low)}–${f(c.high)}</span><span><i class="sw-dash"></i>${f(c.veryLow)} and ${f(c.veryHigh)} ${esc(a.unit)}</span>`;
 }
 
+// One daily-insulin figure everywhere: the mean over the window's complete days
+// (get_tdd_trend windowMean), always shown with that basis.
 function insulinFacts(s) {
   const i = s.insulin || {};
-  const basal = i.averageBasalUnitsPerDay;
-  const tdd = basal != null && i.bolusUnitsPerDay != null ? basal + i.bolusUnitsPerDay : null;
+  const m = report.tddTrend && !report.tddTrend.error ? report.tddTrend.windowMean : null;
   const perDay = i.observedDays ? i.bolusEventCount / i.observedDays : null;
-  return { i, basal, tdd, perDay };
+  if (!m?.completeDays) return { i, perDay, tdd: null, basis: 'no complete day in this window' };
+  const pct = (v) => (m.meanTdd ? (v / m.meanTdd) * 100 : null);
+  return {
+    i, perDay, tdd: m.meanTdd, basal: m.meanBasal, bolus: m.meanBolus, auto: m.meanAutoCorrectionUnits,
+    basalPct: m.basalPercent, bolusPct: pct(m.meanBolus), autoPct: pct(m.meanAutoCorrectionUnits),
+    basis: `mean of ${m.completeDays} complete day${m.completeDays === 1 ? '' : 's'}`,
+  };
 }
 
 function renderInsulin(s) {
-  const { i, basal, tdd, perDay } = insulinFacts(s);
+  const { i, tdd, basal, bolus, auto, basalPct, bolusPct, autoPct, basis, perDay } = insulinFacts(s);
+  $('tddBig').innerHTML = tdd != null ? `<b>${num(tdd, 1)}</b>U/day total daily dose · ${esc(basis)}` : 'Total daily dose: no complete day in this window, so no figure.';
   $('insulin').innerHTML = dl([
-    ['Total daily dose', tdd != null ? `${num(tdd, 2)} U/day` : 'basal total unavailable'],
-    ['Basal', basal != null ? `${num(basal, 2)} U/day (${num(i.basalPercent)} %)` : null],
-    ['Bolus', i.bolusUnitsPerDay != null ? `${num(i.bolusUnitsPerDay, 2)} U/day${i.bolusPercent != null ? ` (${num(i.bolusPercent)} %)` : ''}` : null],
+    ['Basal', basal != null ? `${num(basal, 2)} U/day (${num(basalPct)} %)` : null],
+    ['Bolus', bolus != null ? `${num(bolus, 2)} U/day (${num(bolusPct)} %)` : null],
+    ['of which automatic corrections', auto != null && isControlIq() ? `${num(auto, 2)} U/day (${num(autoPct)} %)` : null],
     ['Average bolus', i.avgUnitsPerBolus != null ? `${num(i.avgUnitsPerBolus, 2)} U` : null],
     ['Boluses per day', perDay != null ? num(perDay) : null],
     ['Carbs', s.carbs ? `${num(s.carbs.carbsPerDay, 0)} g/day, ${s.carbs.carbEntryCount} entries` : null],
@@ -445,7 +508,9 @@ function renderInsulin(s) {
   ]);
 }
 
-const MODE_COLORS = { automatic: 'var(--ok)', sleep: 'var(--accent)', exercise: 'var(--high)', manual: 'var(--low)', limited: 'var(--low)', activity: 'var(--high)' };
+// Automatic is the neutral default; only the special modes get a colour, and none
+// of them reuses a glucose colour.
+const MODE_COLORS = { automatic: 'var(--mode-auto)', sleep: 'var(--sleep)', exercise: 'var(--exercise)', manual: 'var(--manual)', limited: 'var(--manual)', activity: 'var(--exercise)', other: 'var(--color-rule-2)', unknown: 'transparent' };
 const MODE_ORDER = ['automatic', 'sleep', 'exercise', 'activity', 'limited', 'manual'];
 
 function modeRows() {
@@ -460,14 +525,16 @@ function modeRows() {
 }
 
 function renderModes() {
-  $('modesTitle').textContent = isControlIq() ? 'Control-IQ mode time' : 'Mode time';
+  $('modesTitle').textContent = isControlIq() ? 'Control-IQ' : 'Mode time';
   const mr = modeRows();
   if (!mr) { $('modeBar').innerHTML = ''; $('modes').innerHTML = dl([['Modes', 'no pump-mode data for this window']]); return; }
   const rows = [...mr.rows].sort((a, b) => MODE_ORDER.indexOf(a[0]) - MODE_ORDER.indexOf(b[0]));
+  $('modeBar').hidden = !mr.exclusive;
   $('modeBar').innerHTML = mr.exclusive
     ? rows.map(([k, v]) => `<div style="width:${v}%;background:${MODE_COLORS[k] || 'var(--muted)'}" title="${esc(k)}"></div>`).join('')
     : '';
-  $('modes').innerHTML = dl(rows.map(([k, v]) => [k, `${num(v)} %`])) +
+  const sw = (k) => `<i class="sw" style="background:${MODE_COLORS[k] || 'var(--muted)'}"></i>`;
+  $('modes').innerHTML = rows.map(([k, v]) => `<dt>${mr.exclusive ? sw(k) : ''}${esc(k)}</dt><dd>${num(v)} %</dd>`).join('') +
     `<dt></dt><dd class="small muted">${mr.exclusive ? `Mean over ${report.controlIq.summary.completeDays} complete day(s).` : 'Share of the window; modes can overlap.'}</dd>`;
 }
 
@@ -475,11 +542,15 @@ function renderControlIq() {
   const r = report.controlIq;
   const show = isControlIq() && r && !r.error;
   $('ciqSection').classList.toggle('hidden', !show);
+  $('ciqSummary').textContent = '';
   if (!show) return;
   const s = r.summary;
+  // The total daily dose itself is the Insulin card's one figure; this states only
+  // the automatic-correction share on the days the Control-IQ review counts.
   $('ciqSummary').textContent = s.completeDays
-    ? `${s.completeDays} of ${s.daysInWindow} day(s) complete (confidence: ${s.confidence}). Per day: ${num(s.meanAutoBolusPerDay.count)} automatic corrections, ${num(s.meanAutoBolusPerDay.units, 2)} U, ${num(s.autoBolusShareOfTddPercent)} % of a ${num(s.meanTotalDailyDose, 2)} U total daily dose.`
+    ? `${num(s.meanAutoBolusPerDay.count)} automatic corrections a day, ${num(s.meanAutoBolusPerDay.units, 2)} U, ${num(s.autoBolusShareOfTddPercent)} % of total daily dose. Over ${s.completeDays} of ${s.daysInWindow} day(s) with complete pump data (confidence: ${s.confidence}).`
     : `No complete days in this window (${s.daysInWindow} day(s) seen), so no period figures.`;
+  $('ciqSub').textContent = `${s.completeDays} of ${s.daysInWindow} day(s) complete`;
   const max = Math.max(1, ...r.byHour.map((h) => h.autoBolus.count));
   $('ciqHours').innerHTML = r.byHour.map((h) => `<div style="height:${(h.autoBolus.count / max) * 100}%" title="${String(h.hour).padStart(2, '0')}:00 — ${h.autoBolus.count} automatic corrections on ${h.autoBolus.daysWithAutoBolus} of ${h.nDays} days"></div>`).join('');
   $('ciqHourLabels').innerHTML = r.byHour.map((h) => `<span>${h.hour % 6 === 0 ? h.hour : ''}</span>`).join('');
@@ -489,8 +560,7 @@ function renderControlIq() {
   $('ciqCaveat').textContent = r.caveat;
 }
 
-function renderTddTrend() {
-  const r = report.tddTrend;
+function renderTddTrend(r) {
   const weeks = r && !r.error ? r.weeks : [];
   $('tddSection').classList.toggle('hidden', !weeks.length);
   if (!weeks.length) return;
@@ -515,20 +585,19 @@ function renderTddTrend() {
   $('tddCaveat').textContent = `* under 5 complete days, not in the trend. ${r.caveat}`;
 }
 
-function healthRows() {
-  const h = report.health;
+function healthRows(h = report.health) {
   if (!h || h.error) return [];
   return (h.buckets || []).filter((b) => b.health && Object.values(b.health).some((v) => v));
 }
 
-function renderHealth() {
-  const rows = healthRows();
+function renderHealth(h) {
+  const rows = healthRows(h);
   $('healthSection').classList.toggle('hidden', !rows.length);
   if (!rows.length) return;
   const hrs = (m) => (m == null ? '—' : `${(m / 60).toFixed(1)} h`);
   $('healthTable').innerHTML = '<tr><th>Week of</th><th>Steps/day</th><th>Active min/day</th><th>Workouts</th><th>Sleep</th><th>Resting HR</th><th>Weight</th><th>TIR %</th></tr>' +
     rows.map((b) => { const x = b.health; return `<tr><td>${esc(b.bucket)}</td><td>${x.steps ? x.steps.perDay : '—'}</td><td>${x.activeMinutes ? num(x.activeMinutes.perDay, 0) : '—'}</td><td>${x.exercise ? `${x.exercise.count} · ${x.exercise.minutes} min` : '—'}</td><td>${x.sleep ? hrs(x.sleep.avgMinutesAsleep) : '—'}</td><td>${x.restingHeartRate ? num(x.restingHeartRate.avgBpm, 0) : '—'}</td><td>${x.weight ? `${num(x.weight.medianKg)} kg` : '—'}</td><td>${num(b.glucose?.consensusBands?.inRange)}</td></tr>`; }).join('');
-  $('healthNote').textContent = report.health.notes?.[0] || '';
+  $('healthNote').textContent = h.notes?.[0] || '';
 }
 
 function segText(list, fmt) {
@@ -551,6 +620,7 @@ function settingsBlocks(s, u) {
 
 function renderSettings(s) {
   const blocks = settingsBlocks(s, config.unit);
+  $('settingsSub').textContent = `From Glooko for ${day(s.reportRange?.start)} to ${day(s.reportRange?.end)}${blocks.length ? `, last effective ${blocks.at(-1).effective} (pump clock)` : ''}. Tandem pumps usually do not send settings to Glooko, so the pasted snapshot above is the one to trust.`;
   $('settings').innerHTML = blocks.length
     ? blocks.map((b) => `<h3>Effective ${esc(b.effective)}</h3><dl>${dl(b.rows)}</dl>`).join('')
     : `<p class="muted">${esc(s.settingsNote || 'No pump settings stored for this window.')}</p>`;
@@ -662,7 +732,7 @@ function buildPrompt() {
   const s = report.summary, u = config.unit, d = s.device || config.device;
   const algo = d?.algorithm || 'the automated insulin delivery algorithm';
   const g = s.glucoseControl || {}, bw = s.bestWorst || {}, b = s.bolusArchitecture || {};
-  const { i, basal, tdd, perDay } = insulinFacts(s);
+  const { i, tdd, basal, bolus, basalPct, bolusPct, basis, perDay } = insulinFacts(s);
   const L = [];
   const push = (...x) => L.push(...x);
 
@@ -732,9 +802,9 @@ ${deviceLine(d)}
 • Worst hour: ${bw.worstHour ? `${bw.worstHour.hour} (${num(bw.worstHour.tir)} % TIR)` : 'N/A'}
 
 [INSULIN DELIVERY]
-• Total daily dose: ${tdd != null ? `${num(tdd, 2)} U` : 'unavailable (no basal totals)'}
-• Basal: ${basal != null ? `${num(basal, 2)} U/day (${num(i.basalPercent)} %)` : 'unavailable'}
-• Bolus: ${num(i.bolusUnitsPerDay, 2)} U/day${i.bolusPercent != null ? ` (${num(i.bolusPercent)} %)` : ''}, automatic corrections included
+• Total daily dose: ${tdd != null ? `${num(tdd, 2)} U (${basis})` : `unavailable (${basis})`}
+• Basal: ${basal != null ? `${num(basal, 2)} U/day (${num(basalPct)} %)` : 'unavailable'}
+• Bolus: ${bolus != null ? `${num(bolus, 2)} U/day (${num(bolusPct)} %), automatic corrections included` : 'unavailable'}
 • Average bolus: ${num(i.avgUnitsPerBolus, 2)} U
 • Boluses per day: ${perDay != null ? num(perDay) : '—'}
 
@@ -780,7 +850,7 @@ ${deviceLine(d)}
     push('', `[CONTROL-IQ DAY REVIEW] (${sm.completeDays} complete of ${sm.daysInWindow} day(s); confidence: ${sm.confidence})
 • Automatic corrections: ${num(sm.meanAutoBolusPerDay.count)} per day, ${num(sm.meanAutoBolusPerDay.units, 2)} U per day, ${num(sm.autoBolusShareOfTddPercent)} % of total daily dose
 • User-initiated bolus: ${num(sm.meanManualBolusUnitsPerDay, 2)} U per day
-• Mean total daily dose (complete days): ${num(sm.meanTotalDailyDose, 2)} U`);
+• Total daily dose: see [INSULIN DELIVERY]`);
     if (top.length) push(`• Hours with the most automatic corrections: ${top.map((h) => `${String(h.hour).padStart(2, '0')}:00 (${h.autoBolus.count} on ${h.autoBolus.daysWithAutoBolus} of ${h.nDays} days)`).join(', ')}`);
     if (sm.incompleteDays?.length) push(`• Left out as incomplete: ${sm.incompleteDays.join(', ')}`);
     push(`• Server caveat: ${r.caveat}`);
@@ -807,22 +877,101 @@ async function load() {
   $('status').textContent = 'Loading from the archive…';
   $('load').disabled = true;
   try {
-    report = await getJson(`/api/report?start=${encodeURIComponent(w.start)}&end=${encodeURIComponent(w.end)}`);
+    const tw = trendsWindow(w);
+    const q = (x) => `start=${encodeURIComponent(x.start)}&end=${encodeURIComponent(x.end)}`;
+    const [rep, wide] = await Promise.all([getJson(`/api/report?${q(w)}`), tw ? getJson(`/api/trends?${q(tw)}`) : null]);
+    report = rep;
     const s = report.summary;
     if (s.error) throw new Error(s.error);
-    $('report').classList.remove('hidden');
+    trends = wide ? { ...wide, widened: true } : { window: w, health: report.health, tddTrend: report.tddTrend, widened: false };
+    document.body.classList.add('loaded');
     $('device').textContent = `${deviceLine(s.device || config.device)} · ${config.online ? 'synced from Glooko' : 'offline archive'} · archive ${day(config.archive.earliest)} to ${day(config.archive.latest)}`;
-    renderGlucose(s); drawAgp(); renderInsulin(s); renderModes(); renderControlIq(); renderTddTrend(); renderHealth(); renderSettings(s);
+    renderGlucose(s); renderInsulin(s); renderModes(); renderControlIq(); renderTrends(); renderSettings(s);
+    drawCharts();
     $('prompt').textContent = buildPrompt();
     $('xStart').value = w.start.slice(0, 16);
     $('xEnd').value = w.end.slice(0, 16);
-    const partErrors = ['pumpModes', 'controlIq', 'tddTrend', 'health', 'agp'].filter((k) => report[k]?.error).map((k) => `${k}: ${report[k].error}`);
+    markPreset();
+    const partErrors = ['pumpModes', 'controlIq', 'tddTrend', 'health', 'agp'].filter((k) => report[k]?.error).map((k) => `${k}: ${report[k].error}`)
+      .concat(trends.widened ? ['tddTrend', 'health'].filter((k) => trends[k]?.error).map((k) => `trends ${k}: ${trends[k].error}`) : []);
     $('status').textContent = (s.note ? s.note + ' ' : '') + (partErrors.length ? `Partly loaded (${partErrors.join('; ')})` : `Loaded ${new Date().toLocaleTimeString()}.`);
   } catch (e) {
     $('status').innerHTML = `<span class="err">Error: ${esc(e.message)}</span>`;
   } finally {
     $('load').disabled = false;
   }
+}
+
+// Trends opens at 90 days when the shared range is under 28 days (same end).
+function trendsWindow(w) {
+  const span = (Date.parse(w.end) - Date.parse(w.start)) / 864e5;
+  if (span >= 28) return null;
+  const endDay = addDays(w.end.slice(0, 10), -1), earliest = day(config?.archive?.earliest);
+  let start = addDays(endDay, -89);
+  if (config?.archive?.earliest && start < earliest) start = earliest;
+  return start < w.start.slice(0, 10) ? { start: `${start}T00:00:00.000Z`, end: w.end } : null;
+}
+
+function renderTrends() {
+  const t = trends;
+  const days = Math.round((Date.parse(t.window.end) - Date.parse(t.window.start)) / 864e5);
+  $('trendsNote').textContent = `Weeks over ${days} days, ${day(t.window.start)} to ${addDays(t.window.end.slice(0, 10), -1)}${t.widened ? ': Trends opens at 90 days (or the whole archive) when the chosen range is under 28 days' : ''}.`;
+  renderTddTrend(t.tddTrend);
+  renderHealth(t.health);
+  $('trendsEmpty').hidden = !($('tddSection').classList.contains('hidden') && $('healthSection').classList.contains('hidden'));
+}
+
+// --- tabs, range and freshness ------------------------------------------------
+
+const TABS = ['overview', 'patterns', 'days', 'trends', 'settings', 'ai'];
+const currentTab = () => (TABS.includes(location.hash.slice(1)) ? location.hash.slice(1) : 'overview');
+
+function showTab() {
+  const tab = currentTab();
+  for (const t of TABS) $('tab-' + t).hidden = t !== tab;
+  document.querySelectorAll('.tabs a').forEach((a) => (a.getAttribute('href') === '#' + tab ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current')));
+  drawCharts(); // measured-width charts need their panel visible
+}
+
+function drawCharts() {
+  if (!report?.summary || report.summary.error) return;
+  const tab = currentTab();
+  if (tab === 'overview') { drawStack(); drawAgp(true); }
+  if (tab === 'patterns') drawAgp(false);
+}
+
+function markPreset() {
+  const span = $('start').value && $('end').value ? Math.round((Date.parse($('end').value) - Date.parse($('start').value)) / 864e5) + 1 : null;
+  const latest = day(config?.archive?.latest);
+  let hit = false;
+  document.querySelectorAll('[data-days]').forEach((b) => {
+    const on = $('end').value === latest && +b.dataset.days === span;
+    hit ||= on;
+    b.setAttribute('aria-pressed', String(on));
+  });
+  // A range no preset matches stays visible in the Custom row.
+  if (!hit && $('start').value) toggleCustom(true);
+}
+
+function toggleCustom(open = $('custom').hidden) {
+  $('custom').hidden = !open;
+  $('customBtn').setAttribute('aria-expanded', String(open));
+}
+
+// "Data through <latest reading, pump clock> · synced <n> min ago"; amber when the
+// newest reading is over about 6 h old (the server's coverage tolerance).
+const STALE_HOURS = 6;
+function renderFresh() {
+  const latest = config?.archive?.latest;
+  if (!latest) { $('fresh').textContent = 'No CGM data in the archive yet.'; $('freshDot').className = 'dot stale'; return; }
+  const when = new Date(latest).toLocaleString('en-GB', { timeZone: 'UTC', weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).replace(',', '');
+  // Glooko writes pump-local time with a Z; compare with the browser's local wall clock.
+  const ageH = (Date.now() - new Date().getTimezoneOffset() * 60000 - Date.parse(latest)) / 36e5;
+  const span = (m) => (m < 60 ? `${m} min` : m < 2880 ? `${Math.round(m / 60)} h` : `${Math.round(m / 1440).toLocaleString('en')} days`);
+  const ago = (iso) => { const m = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 60000)); return m < 1 ? 'just now' : `${span(m)} ago`; };
+  const synced = config.archive.syncedAt ? `synced ${ago(config.archive.syncedAt)}` : config.online ? 'not synced yet' : 'offline archive';
+  $('fresh').innerHTML = `Data through <b>${esc(when)}</b> (pump clock) · ${esc(synced)}${ageH > STALE_HOURS ? ` · newest reading ${esc(span(Math.round(ageH * 60)))} old` : ''}`;
+  $('freshDot').className = ageH > STALE_HOURS ? 'dot stale' : 'dot';
 }
 
 async function download(type) {
@@ -864,6 +1013,7 @@ async function refresh() {
   try {
     const span = $('start').value && $('end').value ? Math.round((Date.parse($('end').value) - Date.parse($('start').value)) / 86400000) + 1 : 14;
     config = await getJson('/api/config');
+    renderFresh();
     $('end').value = '';
     setPreset(span);
     await load();
@@ -889,8 +1039,12 @@ addEventListener('resize', () => {
   if (innerWidth === lastWidth || !report?.summary || report.summary.error) return;
   lastWidth = innerWidth;
   clearTimeout(resizeTimer);
-  resizeTimer = setTimeout(() => { drawStack(); drawAgp(); }, 120);
+  resizeTimer = setTimeout(drawCharts, 120);
 });
+addEventListener('hashchange', showTab);
+$('customBtn').onclick = () => toggleCustom();
+setInterval(renderFresh, 60000);
+showTab();
 
 document.querySelectorAll('[data-days]').forEach((b) => (b.onclick = () => { setPreset(+b.dataset.days); load(); }));
 document.querySelectorAll('[data-export]').forEach((b) => (b.onclick = () => download(b.dataset.export)));
@@ -922,6 +1076,7 @@ $('ground').onclick = () => {
     config = await getJson('/api/config');
     $('device').textContent = deviceLine(config.device);
     $('refresh').hidden = !config.online;
+    renderFresh();
     if (!config.archive.latest) { $('status').textContent = 'The archive holds no CGM data yet. If the server is syncing, try again in a few minutes.'; }
     setPreset(14);
     await load();

@@ -347,7 +347,7 @@ async function handleWeb(req, res, url) {
         upper: g.upper,
         online: glookoConfigured(),
         device: JSON.parse(getMeta('device') || 'null'),
-        archive: { earliest: iso(getEarliestCgmEpoch()), latest: iso(getLatestCgmEpoch()) },
+        archive: { earliest: iso(getEarliestCgmEpoch()), latest: iso(getLatestCgmEpoch()), syncedAt: getMeta('glookoSyncedAt') },
       });
     }
 
@@ -382,6 +382,15 @@ async function handleWeb(req, res, url) {
         tddTrend,
         agp,
       });
+    }
+
+    // Trends tab: only the weekly parts, so it can open on a longer window than the rest.
+    if (url.pathname === '/api/trends') {
+      const [health, tddTrend] = await Promise.all([
+        callTool('get_health_context', { ...w, granularity: 'week' }),
+        callTool('get_tdd_trend', w),
+      ]);
+      return sendJson(res, 200, { window: w, health, tddTrend });
     }
 
     if (url.pathname === '/api/export') {

@@ -1954,6 +1954,24 @@ export function buildTddTrend(bundle, weights, thresholds, units, sEpoch, eEpoch
     slope = r2(pts.reduce((a, p) => a + (p[0] - mx) * (p[1] - my), 0) / sxx);
   }
 
+  // One daily-insulin figure for the whole window: the mean over every complete day.
+  const all = [...weeks.values()].flatMap((w) => w.days);
+  const allSum = (f) => all.reduce((a, d) => a + (f(d) || 0), 0);
+  const allTdd = allSum((d) => d.di.totalUnits);
+  const allBasal = allSum((d) => d.di.basalUnits);
+  const windowMean = all.length
+    ? {
+        completeDays: all.length,
+        meanTdd: r2(allTdd / all.length),
+        meanBasal: r2(allBasal / all.length),
+        meanBolus: r2(allSum((d) => d.di.bolusUnits) / all.length),
+        meanAutoCorrectionUnits: r2(
+          allSum((d) => d.items.filter((i) => i.type === 'BOLUS' && i.class === 'Automatic Correction Bolus').reduce((a, b) => a + (b.units || 0), 0)) / all.length
+        ),
+        basalPercent: allTdd ? r1((allBasal / allTdd) * 100) : null,
+      }
+    : { completeDays: 0 };
+
   return {
     caveat: TDD_TREND_CAVEAT,
     notes: [
@@ -1962,7 +1980,9 @@ export function buildTddTrend(bundle, weights, thresholds, units, sEpoch, eEpoch
       'changeVsPreviousWeek compares with the calendar week before; null when that week is missing or not included. rolling4WeekMeanTdd averages the included weeks among this week and the three before it.',
       'tddPerKg uses the median Google Health weigh-in inside the same week and is omitted when there is none. tddUnitsPerGramLoggedCarbs is the week\'s TDD over its logged carbs, so unlogged meals inflate it. Neither is an insulin sensitivity or carb ratio.',
       'Glucose mean and time in range cover the CGM readings on the same complete days.',
+      'windowMean is the mean over every complete day in the window, whatever week it falls in; it is the one daily-insulin figure the report page shows.',
     ],
+    windowMean,
     trend: {
       weeksInWindow: rows.length,
       includedWeeks: pts.length,
