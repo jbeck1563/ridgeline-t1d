@@ -90,6 +90,8 @@ if (NOBASIC) {
   // 4. Report: the same numbers the MCP tools return, automatic boluses included.
   const rep = await json(`/api/report?${win}`);
   assert.strictEqual(rep.summary.glucoseControl.cgmReadingCount, 576);
+  assert.strictEqual(rep.summary.glucoseControl.cgmActivePercent, 100); // 576 readings over 2 days
+  assert.deepStrictEqual([rep.agp.readings, rep.agp.slots.length], [576, 96]);
   assert.strictEqual(rep.summary.bolusArchitecture.automaticCorrection, 3);
   assert.strictEqual(rep.summary.insulin.bolusEventCount, 6);
   assert.strictEqual(rep.pumpModes.modes.sleep.minutes, 780);

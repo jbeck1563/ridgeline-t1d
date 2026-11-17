@@ -82,8 +82,14 @@ assert.deepStrictEqual(out.trend, { weeksInWindow: 5, includedWeeks: 4, slopeUni
 assert.deepStrictEqual(w1.proxies, { tddPerKg: { value: 0.375, weightKg: 80, weighIns: 1 } });
 assert.deepStrictEqual(w2.proxies, { tddUnitsPerGramLoggedCarbs: { value: 0.213, carbsGrams: 1050, carbEntries: 7 } });
 assert.deepStrictEqual(w4.proxies, {});
-assert.deepStrictEqual(w1.glucose, { mean: 9, timeInRange: 50, cgmReadings: 14 });
-assert.deepStrictEqual(w5.glucose, { mean: 10, timeInRange: 50, cgmReadings: 14 });
+assert.deepStrictEqual(w1.glucose, {
+  mean: 9, timeInRange: 50, timeVeryLow: 0, timeVeryHigh: 0,
+  consensusBands: { veryLow: 0, low: 0, inRange: 50, high: 50, veryHigh: 0 }, cgmReadings: 14,
+});
+assert.deepStrictEqual(w5.glucose, {
+  mean: 10, timeInRange: 50, timeVeryLow: 0, timeVeryHigh: 50,
+  consensusBands: { veryLow: 0, low: 0, inRange: 50, high: 0, veryHigh: 50 }, cgmReadings: 14,
+});
 
 // 5. Caveat rule; never a setting value.
 assert.match(out.caveat, /Discuss with your endocrinologist before changing settings/);

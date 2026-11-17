@@ -35,6 +35,8 @@ import {
 import {
   computeSummary,
   calculateHourly,
+  agpProfile,
+  CONSENSUS_MMOL,
   buildEnrichedBolusLog,
   bucketTrend,
   downsampleForChart,
@@ -172,7 +174,9 @@ server.registerTool(
       'Returns: reportRange (start, end, days, reflecting the actual data ' +
       'present), glucoseControl (averageBG, gmiEstimatedA1c, stdDev, ' +
       'coefficientOfVariation, variability flag, timeInRange/timeLow/timeHigh, ' +
-      'cgmReadingCount); glucoseExtremes (highest and lowest readings, each with ' +
+      'timeVeryLow/timeVeryHigh and consensusBands {veryLow, low, inRange, high, veryHigh} (percent of readings in the fixed international-consensus bands <3.0, 3.0-3.8, 3.9-10.0, 10.1-13.9 and >13.9 mmol/L, whatever lower/upper are), cgmReadingCount, and cgmActivePercent: readings ' +
+      'over the 5-minute readings the window allows up to now; the consensus ' +
+      'asks for 70 % or more over 14 days); glucoseExtremes (highest and lowest readings, each with ' +
       'every timestamped instance); bestWorst (bestDay, worstDay, bestHour, ' +
       'worstHour, each with tir, medianAbsTargetDev, cv); insulin (observedDays, ' +
       'bolusUnits, bolusUnitsPerDay, bolusEventCount, avgUnitsPerBolus, and when ' +
@@ -213,6 +217,10 @@ server.registerTool(
         'exact',
         bundle.dailyInsulin
       );
+      // CGM active %: readings over the 5-minute slots between start and the
+      // earlier of end and now (a window running into the future is not "missed").
+      const expected = Math.max(1, Math.round((Math.min(Date.parse(e), Date.now()) - Date.parse(s)) / 300000));
+      summary.glucoseControl.cgmActivePercent = +Math.min(100, (summary.glucoseControl.cgmReadingCount / expected) * 100).toFixed(1);
       summary.servedFromArchive = bundle.servedFromArchive;
       summary.device = bundle.device ?? null;
       if (!summary.settings.length) summary.settingsNote = 'Pump settings unavailable for this window.';
@@ -407,7 +415,8 @@ server.registerTool(
       'Hours are UTC clock-hours. When presenting to the patient, convert each ' +
       'hour to their local time and label it.\n\n' +
       'Returns: a byHour array of up to 24 rows, each with hour (UTC, "HH:00"), ' +
-      'averageBG, timeInRange, timeLow, timeHigh and the reading count for that ' +
+      'averageBG, timeInRange, timeLow, timeHigh, veryLow, veryHigh, ' +
+      'consensusBands (five fixed consensus bands) and the reading count for that ' +
       'hour. Glucose values are in the configured unit.',
     inputSchema: {
       start: z.string().describe(startDesc),
@@ -430,6 +439,53 @@ server.registerTool(
         window: { start: s, end: e },
         unit: units === 'mgdl' ? 'mg/dL' : 'mmol/L',
         byHour: hourly,
+      });
+    } catch (err) {
+      return errorResult(err.message);
+    }
+  }
+);
+
+// --- get_agp ------------------------------------------------------------------
+server.registerTool(
+  'get_agp',
+  {
+    title: 'Ambulatory glucose profile (AGP)',
+    description:
+      'The standard daily-pattern view: every CGM reading in the window laid ' +
+      'over one 24 h clock in 96 slots of 15 minutes, with the 5th, 25th, 50th ' +
+      '(median), 75th and 95th percentile per slot. Use 14 days, the window the ' +
+      'international consensus AGP report uses, unless asked otherwise.\n\n' +
+      'Each percentile line is smoothed with a circular 5-slot (75 min) moving ' +
+      'average; n is the raw reading count in the slot. Slot times are the pump ' +
+      'clock (Glooko writes it with a Z), not real UTC.\n\n' +
+      'Returns: window, unit, slotMinutes, readings, consensusThresholds (3.0, ' +
+      '3.9, 10.0, 13.9 mmol/L in the configured unit) and slots (slot, time ' +
+      '"HH:MM", n, p5, p25, p50, p75, p95; null when no reading falls near the ' +
+      'slot). Glucose values are in the configured unit.',
+    inputSchema: {
+      start: z.string().describe(startDesc),
+      end: z.string().describe(endDesc),
+      units: unitsSchema,
+    },
+  },
+  async ({ start, end, units: unitsIn }) => {
+    try {
+      const { units } = resolveThresholdInputs({ units: unitsIn });
+      const s = assertIsoDate(start, 'start');
+      const e = assertIsoDate(end, 'end');
+      assertWithinCap(s, e, CAPS.hourlyMaxDays, 'get_agp');
+      const bundle = await getProcessedRange(s, e);
+      const slots = agpProfile(bundle.timeline, units);
+      return jsonResult({
+        window: { start: s, end: e },
+        unit: units === 'mgdl' ? 'mg/dL' : 'mmol/L',
+        slotMinutes: 15,
+        readings: slots.reduce((a, x) => a + x.n, 0),
+        consensusThresholds: Object.fromEntries(
+          Object.entries(CONSENSUS_MMOL).map(([k, v]) => [k, toDisplay(v, units)])
+        ),
+        slots,
       });
     } catch (err) {
       return errorResult(err.message);
@@ -506,7 +562,7 @@ server.registerTool(
       'and a coverage percentage, so you can judge which rows to trust.\n\n' +
       'Returns: bucketCount and a buckets array. Each row has: bucket (period ' +
       'key), start, end, observedDays; glucose (avg, timeInRange, timeLow, ' +
-      'timeHigh, stdDev, coefficientOfVariation, gmiEstimatedA1c, ' +
+      'timeHigh, timeVeryLow/timeVeryHigh and consensusBands {veryLow, low, inRange, high, veryHigh} (percent of readings in the fixed international-consensus bands <3.0, 3.0-3.8, 3.9-10.0, 10.1-13.9 and >13.9 mmol/L, whatever lower/upper are), stdDev, coefficientOfVariation, gmiEstimatedA1c, ' +
       'cgmReadingCount); insulin (bolusUnits, bolusUnitsPerDay, bolusEventCount, ' +
       'avgUnitsPerBolus, and when Glooko daily data exists basalUnits, ' +
       'basalDayCount, averageBasalUnitsPerDay, basalPercent, bolusPercent); ' +
