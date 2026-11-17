@@ -924,7 +924,8 @@ server.registerTool(
       'basal value from them. Relay the caveat: discuss with your ' +
       'endocrinologist before changing settings.\n\n' +
       'Returns: caveat, notes, trend {weeksInWindow, includedWeeks, ' +
-      'slopeUnitsPerWeek, confidence}, weeks, healthSync.',
+      'slopeUnitsPerWeek, confidence}, weeks, windowMean (the mean over every ' +
+      'complete day in the window, with completeDays), healthSync.',
     inputSchema: {
       start: z.string().describe(startDesc),
       end: z.string().describe(endDesc),

@@ -78,6 +78,11 @@ assert.deepStrictEqual(w5.rolling4WeekMeanTdd, { value: 35.33, nWeeks: 3 });
 assert.strictEqual(w3.rolling4WeekMeanTdd, undefined);
 assert.deepStrictEqual(out.trend, { weeksInWindow: 5, includedWeeks: 4, slopeUnitsPerWeek: 2, confidence: 'medium' });
 
+// 3b. One window-level figure over every complete day (31 days, the partial week included).
+assert.deepStrictEqual(out.windowMean, {
+  completeDays: 31, meanTdd: 34, meanBasal: 17, meanBolus: 17, meanAutoCorrectionUnits: 0.11, basalPercent: 50,
+});
+
 // 4. Proxies appear only when their data exists; glucose sits beside each week.
 assert.deepStrictEqual(w1.proxies, { tddPerKg: { value: 0.375, weightKg: 80, weighIns: 1 } });
 assert.deepStrictEqual(w2.proxies, { tddUnitsPerGramLoggedCarbs: { value: 0.213, carbsGrams: 1050, carbEntries: 7 } });

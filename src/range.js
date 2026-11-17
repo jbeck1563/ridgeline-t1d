@@ -197,6 +197,8 @@ export async function pullAndIngest(startISO, endISO) {
   // Mark today partial if the window reached into it.
   const todayStart = startOfTodayEpochSeconds();
   if (toEpoch >= todayStart) markDays([dayStr(todayStart)], false);
+  // Wall-clock time of the last successful Glooko pull, for the page's freshness line.
+  setMeta('glookoSyncedAt', new Date().toISOString());
 
   return { rawStats: raw.data2 };
 }
