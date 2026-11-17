@@ -109,8 +109,38 @@ export function toDisplayDelta(mmolDelta, units, decimals = 2) {
   return +mmolDelta.toFixed(decimals);
 }
 
+// International consensus CGM time in ranges (Battelino et al., Diabetes Care
+// 2019), fixed in mmol/L whatever OMNI_LOWER/OMNI_UPPER say. Five bands:
+// very low < 3.0, low 3.0-3.8, in range 3.9-10.0, high 10.1-13.9, very high > 13.9.
+export const CONSENSUS_MMOL = { veryLow: 3.0, low: 3.9, high: 10.0, veryHigh: 13.9 };
+const BAND_KEYS = ['veryLow', 'low', 'inRange', 'high', 'veryHigh'];
+
+/** Consensus band index 0..4 of a stored mmol/L value. */
+export function consensusBandIndex(v) {
+  // Round to the 0.1 mmol/L CGM step first, so mg/dL-sourced values such as
+  // 70 mg/dL (3.885) land in range as the mg/dL consensus (70-180) says.
+  const r = Math.round(v * 10) / 10;
+  const c = CONSENSUS_MMOL;
+  return r < c.veryLow ? 0 : r < c.low ? 1 : r <= c.high ? 2 : r <= c.veryHigh ? 3 : 4;
+}
+
+/** Five-band percentages (2 dp) from per-band counts [veryLow..veryHigh]. */
+export function consensusBandsFromCounts(counts) {
+  const n = counts.reduce((a, b) => a + b, 0);
+  return Object.fromEntries(BAND_KEYS.map((k, i) => [k, n ? +((counts[i] / n) * 100).toFixed(2) : 0]));
+}
+
+export function consensusBands(bgValues) {
+  const counts = [0, 0, 0, 0, 0];
+  for (const v of bgValues || []) counts[consensusBandIndex(v)]++;
+  return consensusBandsFromCounts(counts);
+}
+
+// tir/low/high use the configured thresholds (unchanged); veryLow/veryHigh and
+// bands use the fixed consensus cut-offs.
 export function calculateTIRMetrics(bgValues, thresholds) {
-  if (!bgValues?.length) return { tir: 0, low: 0, high: 0 };
+  const bands = consensusBands(bgValues);
+  if (!bgValues?.length) return { tir: 0, low: 0, high: 0, veryLow: 0, veryHigh: 0, bands };
   const { low, high } = thresholds;
   const inRange = bgValues.filter((v) => v >= low && v <= high).length;
   const lowCount = bgValues.filter((v) => v < low).length;
@@ -119,7 +149,53 @@ export function calculateTIRMetrics(bgValues, thresholds) {
     tir: (inRange / bgValues.length) * 100,
     low: (lowCount / bgValues.length) * 100,
     high: (highCount / bgValues.length) * 100,
+    veryLow: bands.veryLow,
+    veryHigh: bands.veryHigh,
+    bands,
   };
+}
+
+/**
+ * Ambulatory glucose profile: every CGM reading laid over one 24 h pump clock
+ * in 15-minute slots (96). Per slot the 5th/25th/50th/75th/95th percentiles
+ * (linear interpolation), then each percentile line is smoothed with a
+ * circular 5-slot (75 min) moving average over the slots that have readings.
+ * n is the raw reading count in the slot, before smoothing.
+ */
+export function agpProfile(timeline, units = 'mmol', slotMinutes = 15) {
+  const nSlots = 1440 / slotMinutes;
+  const bins = Array.from({ length: nSlots }, () => []);
+  for (const p of timeline) {
+    if (p.type !== 'CGM') continue;
+    const d = new Date(p.epoch * 1000);
+    bins[Math.floor((d.getUTCHours() * 60 + d.getUTCMinutes()) / slotMinutes)].push(p.val);
+  }
+  const Q = [0.05, 0.25, 0.5, 0.75, 0.95];
+  const pct = (s, q) => {
+    const i = (s.length - 1) * q, lo = Math.floor(i);
+    return s[lo] + (s[Math.ceil(i)] - s[lo]) * (i - lo);
+  };
+  const raw = bins.map((b) => {
+    const s = [...b].sort((x, y) => x - y);
+    return Q.map((q) => (s.length ? pct(s, q) : null));
+  });
+  const keys = ['p5', 'p25', 'p50', 'p75', 'p95'];
+  return bins.map((b, i) => {
+    const row = {
+      slot: i,
+      time: `${String(Math.floor((i * slotMinutes) / 60)).padStart(2, '0')}:${String((i * slotMinutes) % 60).padStart(2, '0')}`,
+      n: b.length,
+    };
+    keys.forEach((k, qi) => {
+      let t = 0, c = 0;
+      for (let j = -2; j <= 2; j++) {
+        const v = raw[(i + j + nSlots) % nSlots][qi];
+        if (v != null) { t += v; c++; }
+      }
+      row[k] = c ? toDisplay(t / c, units) : null;
+    });
+    return row;
+  });
 }
 
 /**
@@ -314,6 +390,9 @@ export function calculateHourly(timeline, thresholds, units = 'mmol') {
         tir: +metrics.tir.toFixed(2),
         low: +metrics.low.toFixed(2),
         high: +metrics.high.toFixed(2),
+        veryLow: metrics.veryLow,
+        veryHigh: metrics.veryHigh,
+        consensusBands: metrics.bands,
         readings: hourly[h].length,
       };
     })
@@ -540,7 +619,7 @@ export function computeSummary(
     std = 0,
     cv = 0,
     gmi = 0,
-    tir = { tir: 0, low: 0, high: 0 };
+    tir = calculateTIRMetrics([], thresholds);
   if (cgmVals.length) {
     avg = cgmVals.reduce((a, b) => a + b, 0) / cgmVals.length;
     std = Math.sqrt(
@@ -704,6 +783,9 @@ export function computeSummary(
       timeInRange: +tir.tir.toFixed(2),
       timeLow: +tir.low.toFixed(2),
       timeHigh: +tir.high.toFixed(2),
+      timeVeryLow: tir.veryLow,
+      timeVeryHigh: tir.veryHigh,
+      consensusBands: tir.bands,
       cgmReadingCount: cgmVals.length,
     },
     glucoseExtremes,
@@ -937,6 +1019,7 @@ export function bucketTrend(
         inRange: 0,
         low: 0,
         high: 0,
+        bandCounts: [0, 0, 0, 0, 0],
         bolusUnits: 0,
         bolusCount: 0,
         carbs: 0,
@@ -960,6 +1043,7 @@ export function bucketTrend(
       if (v < thresholds.low) b.low++;
       else if (v > thresholds.high) b.high++;
       else b.inRange++;
+      b.bandCounts[consensusBandIndex(v)]++;
     } else if (item.type === 'BOLUS') {
       b.bolusUnits += item.units || 0;
       b.bolusCount++;
@@ -993,6 +1077,7 @@ export function bucketTrend(
           inRange: 0,
           low: 0,
           high: 0,
+          bandCounts: [0, 0, 0, 0, 0],
           bolusUnits: 0,
           bolusCount: 0,
           carbs: 0,
@@ -1073,6 +1158,7 @@ function buildBucketRow(b, thresholds, units) {
     }
   }
 
+  const bands = consensusBandsFromCounts(b.bandCounts);
   return {
     bucket: b.key.replace(/^[WF]:/, ''),
     start: new Date(b.firstEpoch * 1000).toISOString(),
@@ -1083,6 +1169,9 @@ function buildBucketRow(b, thresholds, units) {
       timeInRange: b.cgmCount ? +((b.inRange / b.cgmCount) * 100).toFixed(2) : 0,
       timeLow: b.cgmCount ? +((b.low / b.cgmCount) * 100).toFixed(2) : 0,
       timeHigh: b.cgmCount ? +((b.high / b.cgmCount) * 100).toFixed(2) : 0,
+      timeVeryLow: bands.veryLow,
+      timeVeryHigh: bands.veryHigh,
+      consensusBands: bands,
       stdDev: toDisplayDelta(std, units),
       coefficientOfVariation: +cv.toFixed(2),
       gmiEstimatedA1c: gmi,
@@ -1812,6 +1901,7 @@ export function buildTddTrend(bundle, weights, thresholds, units, sEpoch, eEpoch
     const carbEntries = sum((d) => bolusesOf(d).filter((b) => b.carbs > 0).length);
     const cgm = days.flatMap((d) => d.items.filter((i) => i.type === 'CGM').map((i) => i.val));
     const inRange = cgm.filter((v) => v >= thresholds.low && v <= thresholds.high).length;
+    const bands = cgm.length ? consensusBands(cgm) : null;
 
     Object.assign(row, {
       meanTdd: r2(tdd / n),
@@ -1823,6 +1913,9 @@ export function buildTddTrend(bundle, weights, thresholds, units, sEpoch, eEpoch
       glucose: {
         mean: cgm.length ? toDisplay(cgm.reduce((a, v) => a + v, 0) / cgm.length, units) : null,
         timeInRange: cgm.length ? r1((inRange / cgm.length) * 100) : null,
+        timeVeryLow: bands ? bands.veryLow : null,
+        timeVeryHigh: bands ? bands.veryHigh : null,
+        consensusBands: bands,
         cgmReadings: cgm.length,
       },
     });

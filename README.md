@@ -121,7 +121,9 @@ measured insulin sensitivity; the tool never computes an ISF, carb ratio or basa
 ### 6. The report page: `GET /` with `OMNI_WEB=1`
 
 **What.** The web UI, served by this server. One static page
-(`src/web/index.html`, no build step) shows glucose control, insulin with automatic
+(`src/web/index.html`, no build step) shows glucose control (the five consensus time-in-range
+bands with their targets, KPI tiles with a met/over chip each, CGM active %), the ambulatory
+glucose profile, insulin with automatic
 corrections counted, mode time, the Control-IQ day review, the weekly total daily dose
 trend (table and inline SVG chart), Google Health context when
 present, the settings in force, a copy-paste AI review prompt, and JSON exports (glucose
@@ -129,7 +131,7 @@ timeline, enriched bolus log, hourly trends) for a deep-dive window.
 
 **How.** The page reads `GET /api/config` (configured unit and range, device, archive span),
 `GET /api/report?start&end` (`get_diabetes_summary`, `get_basal_delivery` modes,
-`get_controliq_review`, `get_tdd_trend`, `get_health_context`) and `GET /api/export?type&start&end`. Each
+`get_controliq_review`, `get_tdd_trend`, `get_health_context`, `get_agp`) and `GET /api/export?type&start&end`. Each
 endpoint calls the MCP tools in process through an in-memory MCP client, so the page shows
 the same numbers from the same archive as any MCP client; the browser parses no Glooko
 data. The prompt states device facts (Control-IQ, user-set DIA, mode time from the pump's
@@ -182,6 +184,10 @@ unlinked account.
 `get_controliq_review` (mode minutes per day, bolus split, flagged incomplete days).
 `node --no-warnings test-tdd.mjs` seeds five synthetic weeks (one partial) and checks
 `get_tdd_trend`: weekly means, flagged partial week, change, rolling mean, slope, proxies.
+`node --no-warnings test-ranges.mjs` checks the five consensus bands (<3.0, 3.0–3.8,
+3.9–10.0, 10.1–13.9, >13.9 mmol/L, fixed whatever `OMNI_LOWER`/`OMNI_UPPER` say) in
+`calculateTIRMetrics` and through the summary, `get_trend`, `get_hourly_trends` and
+`get_tdd_trend`, and the AGP percentiles and smoothing (`agpProfile`, `get_agp`).
 `node --no-warnings test-pump-settings.mjs` parses a synthetic t:connect paste (CRLF,
 trailing spaces, three profiles, multi-segment schedules), checks identifiers are dropped and
 a repeat import is a no-op, and covers `get_pump_settings` and `/api/pump-settings` (401
