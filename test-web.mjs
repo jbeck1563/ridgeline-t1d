@@ -97,6 +97,14 @@ if (NOBASIC) {
   assert.strictEqual(rep.summary.glucoseControl.cgmReadingCount, 576);
   assert.strictEqual(rep.summary.glucoseControl.cgmActivePercent, 100); // 576 readings over 2 days
   assert.deepStrictEqual([rep.agp.readings, rep.agp.slots.length], [576, 96]);
+  // Hourly five-band TIR for the Patterns tab: 24 pump-clock hours, 12 readings an hour on 2 days.
+  assert.deepStrictEqual(rep.hourly.byHour.map((h) => [h.hourNum, h.readings]), Array.from({ length: 24 }, (_, h) => [h, 24]));
+  for (const h of rep.hourly.byHour) {
+    const b = h.consensusBands;
+    assert.ok(Math.abs(b.veryLow + b.low + b.inRange + b.high + b.veryHigh - 100) < 0.05, `hour ${h.hour} bands sum to 100`);
+  }
+  assert.deepStrictEqual(rep.hourly.byHour[0].consensusBands, { veryLow: 0, low: 0, inRange: 100, high: 0, veryHigh: 0 });
+  assert.deepStrictEqual(rep.hourly.byHour[3].consensusBands, { veryLow: 0, low: 0, inRange: 62.5, high: 37.5, veryHigh: 0 });
   assert.strictEqual(rep.summary.bolusArchitecture.automaticCorrection, 3);
   assert.strictEqual(rep.summary.insulin.bolusEventCount, 6);
   assert.strictEqual(rep.pumpModes.modes.sleep.minutes, 780);
