@@ -164,6 +164,7 @@
       <label>To (inclusive) <input type="date" id="end"></label>
       <div class="presets" role="group" aria-label="Quick range"><button data-days="7">7 d</button><button data-days="14">14 d</button><button data-days="30">30 d</button><button data-days="90">90 d</button></div>
       <button class="primary" id="load">Load</button>
+      <button id="refresh" hidden>Refresh from Glooko</button>
     </div>
     <p id="status" class="small muted">Ready.</p>
   </section>
@@ -747,6 +748,38 @@ async function download(type) {
   }
 }
 
+// Pull new uploads from Glooko, then reload the report with the end date moved
+// up to the new archive edge (same span).
+async function refresh() {
+  $('refresh').disabled = $('load').disabled = true;
+  $('status').textContent = 'Pulling new data from Glooko… this can take a minute.';
+  let outcome;
+  try {
+    const res = await fetch(new URL('/api/refresh', location.origin), { method: 'POST', headers: { Accept: 'application/json' } });
+    let body = null;
+    try { body = await res.json(); } catch { /* proxy error page */ }
+    if (!res.ok) throw new Error(body?.error || `HTTP ${res.status}`);
+    const n = body.newReadings;
+    outcome = `Synced ${new Date(body.syncedAt).toLocaleTimeString()}: ${n > 0 ? `${n} new CGM reading${n === 1 ? '' : 's'}` : 'no new CGM readings'}, data through ${body.latest ? body.latest.slice(0, 16).replace('T', ' ') + ' UTC' : 'nothing yet'}.`;
+  } catch (e) {
+    $('status').innerHTML = `<span class="err">Refresh failed: ${esc(e.message)}</span>`;
+    $('refresh').disabled = $('load').disabled = false;
+    return;
+  }
+  try {
+    const span = $('start').value && $('end').value ? Math.round((Date.parse($('end').value) - Date.parse($('start').value)) / 86400000) + 1 : 14;
+    config = await getJson('/api/config');
+    $('end').value = '';
+    setPreset(span);
+    await load();
+    $('status').innerHTML = `${esc(outcome)} ${$('status').innerHTML}`; // keeps load()'s error styling
+  } catch (e) {
+    $('status').innerHTML = `${esc(outcome)} <span class="err">Reload failed: ${esc(e.message)}</span>`;
+  } finally {
+    $('refresh').disabled = false;
+  }
+}
+
 function setPreset(days) {
   const end = $('end').value || day(config?.archive?.latest) || new Date().toISOString().slice(0, 10);
   const earliest = day(config?.archive?.earliest);
@@ -758,6 +791,7 @@ function setPreset(days) {
 document.querySelectorAll('[data-days]').forEach((b) => (b.onclick = () => { setPreset(+b.dataset.days); load(); }));
 document.querySelectorAll('[data-export]').forEach((b) => (b.onclick = () => download(b.dataset.export)));
 $('load').onclick = load;
+$('refresh').onclick = refresh;
 $('import').onclick = importPaste;
 loadPumpSettings();
 $('copy').onclick = async () => {
@@ -783,6 +817,7 @@ $('ground').onclick = () => {
   try {
     config = await getJson('/api/config');
     $('device').textContent = deviceLine(config.device);
+    $('refresh').hidden = !config.online;
     if (!config.archive.latest) { $('status').textContent = 'The archive holds no CGM data yet. If the server is syncing, try again in a few minutes.'; }
     setPreset(14);
     await load();

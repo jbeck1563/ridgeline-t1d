@@ -35,8 +35,8 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { createServer, glucoseDefaults } from './server.js';
 import { glookoConfigured } from './range.js';
 import { fetchGlookoRange } from './glooko.js';
-import { ensureFreshOnFirstCall } from './sync.js';
-import { initDb, getEarliestCgmEpoch, getLatestCgmEpoch, getMeta, savePumpSettings } from './store.js';
+import { ensureFreshOnFirstCall, runTopUp, isSyncing } from './sync.js';
+import { initDb, getEarliestCgmEpoch, getLatestCgmEpoch, getCgmCount, getMeta, savePumpSettings } from './store.js';
 import { parseTandemSettings } from './tandem-settings.js';
 
 const PORT = parseInt(process.env.OMNI_HTTP_PORT || '3000', 10);
@@ -301,15 +301,42 @@ async function importPumpSettings(req, res) {
   return sendJson(res, 200, { saved, snapshot, uploads });
 }
 
+// POST /api/refresh — runs the same locked Glooko top-up the MCP server uses and
+// answers when it finishes: { status: 'done', newReadings, latest, syncedAt }.
+// A sync already running answers 409 { status: 'in-progress' } at once rather
+// than queueing a second pull; a failed pull is 502 { status: 'error', error }.
+async function refreshArchive(res) {
+  if (!glookoConfigured()) {
+    return sendJson(res, 503, { status: 'error', error: 'Offline mode: no Glooko credentials configured on the server.' });
+  }
+  if (isSyncing()) return sendJson(res, 409, { status: 'in-progress', error: 'A Glooko sync is already running. Try again in a minute.' });
+  const before = getCgmCount();
+  try {
+    await runTopUp((m) => console.error(`[ridgeline] web refresh: ${m}`));
+  } catch (err) {
+    console.error('[ridgeline] web refresh failed:', err.message);
+    return sendJson(res, 502, { status: 'error', error: err.message });
+  }
+  return sendJson(res, 200, {
+    status: 'done',
+    newReadings: getCgmCount() - before,
+    latest: iso(getLatestCgmEpoch()),
+    syncedAt: new Date().toISOString(),
+  });
+}
+
 async function handleWeb(req, res, url) {
   const isImport = url.pathname === '/api/pump-settings' && req.method === 'POST';
-  if (req.method !== 'GET' && !isImport) return notFound(res);
+  const isRefresh = url.pathname === '/api/refresh' && req.method === 'POST';
+  if (req.method !== 'GET' && !isImport && !isRefresh) return notFound(res);
   if (!basicGate(req, res, url.pathname)) return;
 
   if (url.pathname === '/') {
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
     return res.end(PAGE);
   }
+
+  if (isRefresh) return refreshArchive(res);
 
   try {
     if (url.pathname === '/api/config') {

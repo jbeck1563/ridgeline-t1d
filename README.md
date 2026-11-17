@@ -136,6 +136,13 @@ data. The prompt states device facts (Control-IQ, user-set DIA, mode time from t
 mode records) and the caveat rule: evidence counts, "discuss with your endocrinologist
 before changing settings", never a new setting value as an instruction.
 
+**Refresh.** After a new pump upload reaches Glooko, press **Refresh from Glooko** (shown only
+when the server has Glooko credentials). It calls `POST /api/refresh`, which runs the same
+locked top-up the MCP server uses (`runTopUp`) and answers when it finishes:
+`{ status: "done", newReadings, latest, syncedAt }`, 409 `in-progress` if a sync is already
+running, 502 `error` if the pull failed, 503 offline. The page then reloads the report with the
+end date moved up to the new archive edge.
+
 **Auth.** Same Basic credential and fail-closed rule as `/my-data` (`OMNI_MYDATA_BASIC`;
 503 when unset). `/mcp` and its Bearer are unchanged, and `/my-data` is unchanged.
 
@@ -181,6 +188,9 @@ a repeat import is a no-op, and covers `get_pump_settings` and `/api/pump-settin
 without the credential, 413 over the cap).
 `node --no-warnings test-web.mjs` covers the page and `/api/*`: 401 without the credential,
 200 and valid JSON with it from the synthetic fixture, and 503 without `OMNI_MYDATA_BASIC`.
+`node --no-warnings test-refresh.mjs` covers `POST /api/refresh` with a stubbed Glooko:
+401 and no pull without the credential, new readings counted, 409 while a pull runs, 502 on
+a failed pull.
 `node test-mydata.mjs` covers the payload shape, anonymous / wrong-credential /
 Bearer-instead-of-Basic requests, and re-execs itself without `OMNI_MYDATA_BASIC` to prove
 the fail-closed branch. It uses the existing `__OMNI_FETCH_STUB__` seam, so it never
