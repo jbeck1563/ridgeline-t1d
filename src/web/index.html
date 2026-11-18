@@ -177,6 +177,20 @@
   @media (max-width: 40rem) { .topbar .shell { flex-direction: column; flex-wrap: nowrap; align-items: stretch; } .range { justify-content: space-between; } .presets button { min-width: 2.9rem; padding-inline: var(--space-xs); } .custom { justify-content: flex-start; } }
   .panel { display: grid; gap: var(--space-md); min-width: 0; }
   body:not(.loaded) .rep { display: none; }
+  /* Days tab (G3) and the Overview days strip (G5). */
+  :root { --insulin: oklch(78% 0.04 215); }
+  :root[data-theme="white"] { --insulin: oklch(40% 0.05 215); }
+  .day { border-top: var(--rule-hair) solid var(--color-rule); padding-block: var(--space-sm); scroll-margin-top: 9rem; }
+  .day:first-child { border-top: 0; }
+  .day.focus { box-shadow: inset 3px 0 0 var(--color-accent); padding-left: var(--space-sm); }
+  .dayhead { display: flex; flex-wrap: wrap; gap: var(--space-2xs) var(--space-md); align-items: baseline; margin-bottom: var(--space-2xs); }
+  .dayhead h3 { margin: 0; font-size: var(--text-md); min-width: 6.5rem; }
+  .dayhead .facts { font-family: var(--font-outlier); font-size: var(--text-sm); color: var(--color-ink-2); }
+  .bandbar { display: flex; flex: 1 1 8rem; max-width: 14rem; align-self: center; height: 10px; border-radius: 5px; overflow: hidden; background: var(--color-rule); min-width: 0; }
+  .bandbar i { display: block; height: 100%; }
+  .tag2 { display: inline-block; font-size: var(--text-xs); padding: 0 6px; border-radius: 4px; border: var(--rule-hair) solid var(--color-rule-2); color: var(--color-ink-2); }
+  #dayStrip a { cursor: pointer; }
+  #dayStrip a:hover rect.hit, #dayStrip a:focus-visible rect.hit { fill: var(--color-paper-2); }
   .big { font-size: var(--text-sm); color: var(--color-muted); }
   .big b { font-family: var(--font-outlier); font-weight: 500; font-size: var(--text-2xl); color: var(--color-ink); margin-right: var(--space-2xs); }
   a { color: var(--color-accent); }
@@ -228,6 +242,12 @@
       <p class="small"><a href="#patterns">Full pattern with Control-IQ by hour →</a></p>
     </section>
 
+    <section class="rep" id="stripSection">
+      <h2>Days at a glance <span class="sub muted" id="stripSub">Time in ranges per day; tap a day to open it</span></h2>
+      <div class="chartbox" id="dayStrip"></div>
+      <p class="small"><a href="#days">Every day with meals, boluses and modes →</a></p>
+    </section>
+
     <div class="grid2 rep">
       <section>
         <h2>Insulin</h2>
@@ -272,9 +292,11 @@
   </div>
 
   <div class="panel" id="tab-days" hidden>
-    <section>
-      <h2>Days <span class="sub muted">Coming next</span></h2>
-      <p class="small muted">One row per day, newest first: the glucose line with boluses, carbs, automatic corrections and Sleep, Exercise and Manual mode, so you can see what happened on a given day. Until then, the per-day Control-IQ table is under Patterns.</p>
+    <section class="rep">
+      <h2>Days <span class="sub muted" id="daysSub">Newest first · glucose with what went in and what the pump did</span></h2>
+      <p class="legend" id="daysLegend"></p>
+      <p class="small muted" id="daysStatus"></p>
+      <div id="daysList"></div>
     </section>
   </div>
 
@@ -972,6 +994,167 @@ Apply the CAVEAT RULE to every point.
   return L.join('\n');
 }
 
+// --- days (G3) and the Overview days strip (G5) -------------------------------
+
+const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const dlong = (ymd) => { const d = new Date(ymd + 'T00:00:00Z'); return `${DOW[d.getUTCDay()]} ${d.getUTCDate()} ${MON[d.getUTCMonth()]}`; };
+// Consensus band of one reading in the page's unit, the same cut-offs the server bands with.
+function bandOf(v) {
+  const [vl, l, h, vh] = isMgdl() ? [54, 70, 180, 250] : [3.0, 3.9, 10.0, 13.9];
+  return v > vh ? BANDS[0] : v > h ? BANDS[1] : v >= l ? BANDS[2] : v >= vl ? BANDS[3] : BANDS[4];
+}
+const bandBar = (b) => `<div class="bandbar" aria-hidden="true">${[...BANDS].reverse().map((x) => `<i style="width:${b[x.k]}%;background:${x.color}"></i>`).join('')}</div>`;
+// Stacked five-band column, very low at the bottom.
+function bandColumn(x, y, w, h, b) {
+  let out = '', y0 = y + h;
+  for (const band of [...BANDS].reverse()) {
+    const hh = (b[band.k] / 100) * h;
+    if (hh > 0) out += `<rect x="${x}" y="${y0 - hh}" width="${w}" height="${hh}" fill="${band.color}"/>`;
+    y0 -= hh;
+  }
+  return out;
+}
+
+// G5: up to the last 14 days of the window, five-band column and TIR % per day;
+// each column links to that day on the Days tab.
+function drawStrip() {
+  const tr = report?.daily, el = $('dayStrip');
+  const rows = tr && !tr.error ? tr.buckets.filter((b) => b.glucose?.consensusBands && b.glucose.cgmReadingCount).slice(-14) : [];
+  $('stripSection').hidden = !rows.length;
+  if (!rows.length) { el.innerHTML = ''; return; }
+  const W = widthOf(el), H = 150, n = rows.length, cw = Math.min(W / n, 72), bw = Math.min(28, cw * 0.62), top = 18, bh = H - top - 34;
+  let out = '';
+  rows.forEach((r, i) => {
+    const b = r.glucose.consensusBands, cx = i * cw + cw / 2, dt = new Date(r.bucket + 'T00:00:00Z');
+    out += `<a href="#days:${r.bucket}" aria-label="${esc(dlong(r.bucket))}: in range ${num(b.inRange)} %"><rect class="hit" x="${i * cw}" y="0" width="${cw}" height="${H}" fill="transparent" rx="6"/>${bandColumn(cx - bw / 2, top, bw, bh, b)}`;
+    out += T(cx, top - 5, num(b.inRange, 0), { anchor: 'middle', size: 11, fill: b.inRange >= 70 ? 'var(--color-ink)' : 'var(--high)' });
+    out += T(cx, H - 18, DOW[dt.getUTCDay()].slice(0, cw < 30 ? 1 : 3), { anchor: 'middle', size: 10.5 }) + T(cx, H - 4, String(dt.getUTCDate()), { anchor: 'middle', size: 11, fill: 'var(--color-ink-2)' }) + '</a>';
+  });
+  // A group, not an img, so each day's link stays reachable by keyboard and screen reader.
+  el.innerHTML = svgEl(W, H, out, `Time in ranges for each of the last ${n} days`).replace('role="img"', 'role="group"');
+  $('stripSub').textContent = `% in range ${rangeOf('inRange')} per day, last ${n} day${n === 1 ? '' : 's'} with data · tap a day to open it`;
+}
+
+// The Days tab loads on first view of a window: /api/days over the last 92 days of it at most.
+const DAYS_MAX = 92;
+let daysData = null; // { key, data } or { key, error } or { key, pending }
+async function loadDays() {
+  const w = report?.window;
+  if (!w) return;
+  const start = new Date(Math.max(Date.parse(w.start), Date.parse(w.end) - DAYS_MAX * 864e5)).toISOString();
+  const key = `${start}|${w.end}`;
+  if (daysData?.key === key) { if (!daysData.pending) renderDays(); return; }
+  daysData = { key, pending: true };
+  $('daysList').innerHTML = '';
+  $('daysStatus').textContent = 'Loading days…';
+  try {
+    const data = await getJson(`/api/days?start=${encodeURIComponent(start)}&end=${encodeURIComponent(w.end)}`);
+    if (daysData.key !== key) return; // window changed meanwhile
+    daysData = { key, data };
+  } catch (e) {
+    if (daysData.key !== key) return;
+    daysData = { key, error: e.message };
+  }
+  if (currentTab() === 'days') renderDays();
+}
+
+function renderDays() {
+  const { data, error } = daysData;
+  const u = config.unit;
+  $('daysLegend').innerHTML = `<span><i style="background:var(--ok);opacity:.35"></i>Target ${rangeOf('inRange')} ${esc(u)}</span><span>Line coloured by range</span><span>▼ bolus (U)</span><span>● carbs (g)</span><span><i style="background:var(--color-accent);width:4px"></i>automatic correction</span><span><i style="background:var(--sleep)"></i>Sleep</span><span><i style="background:var(--exercise)"></i>Exercise</span><span><i style="background:var(--manual)"></i>Manual</span><span>┆ site, cartridge or sensor change</span>`;
+  if (error) { $('daysStatus').innerHTML = `<span class="err">Error: ${esc(error)}</span>`; $('daysList').innerHTML = ''; return; }
+  const days = data.days.filter((d) => d.readings || d.boluses.length);
+  const cut = Date.parse(data.window.start) > Date.parse(report.window.start);
+  $('daysStatus').textContent = (days.length ? `${days.length} day${days.length === 1 ? '' : 's'}` : 'No days with data in this window') + (cut ? `; the Days view shows the last ${DAYS_MAX} days of the range.` : '.') +
+    (data.partErrors ? ` Partly loaded: ${Object.entries(data.partErrors).filter(([, v]) => v).map(([k, v]) => `${k}: ${v}`).join('; ')}` : '');
+  const kindTag = { site: 'site change', cartridge: 'new cartridge', sensor: 'new sensor' };
+  $('daysList').innerHTML = days.map((d, i) => {
+    const b = d.bands;
+    const tdd = d.tdd == null ? 'TDD —' : `TDD ${num(d.tdd)} U${d.tddComplete ? '' : ' (partial)'}`;
+    const facts = [b ? `TIR ${num(b.inRange, 0)} %` : 'no CGM', tdd, `${d.carbsGrams} g carbs`, d.autoCorrections ? `${d.autoCorrections.count} auto` : null].filter(Boolean).join(' · ');
+    const tags = [...new Set(d.events.map((e) => kindTag[e.kind]))].concat(d.modes.some((m) => m.mode === 'manual') ? ['manual mode'] : []).map((t) => `<span class="tag2">${t}</span>`).join(' ');
+    return `<article class="day" id="day-${d.date}"><div class="dayhead"><h3>${dlong(d.date)}</h3>${b ? bandBar(b) : ''}<span class="facts">${facts}</span>${tags}</div><div class="chartbox" data-i="${i}"></div></article>`;
+  }).join('');
+  document.querySelectorAll('#daysList .chartbox').forEach((el) => drawDay(el, days[+el.dataset.i]));
+  focusDay();
+}
+
+// Staggers labels onto up to `rows` lines so none overlaps; returns the row per item.
+function stagger(items, rows) {
+  const ends = Array(rows).fill(-Infinity);
+  return items.map(({ x, w }) => {
+    let r = ends.findIndex((e) => x >= e + 4);
+    if (r < 0) r = ends.indexOf(Math.min(...ends));
+    ends[r] = x + w;
+    return r;
+  });
+}
+
+// One day: carbs above, glucose by band in the middle, boluses and automatic
+// corrections under it, the mode ribbon and the clock at the bottom. Every value is
+// printed; labels that would collide drop to a second line.
+function drawDay(el, d) {
+  const mg = isMgdl(), W = widthOf(el), L = 34, R = 8;
+  const x = (m) => L + (m / 1440) * (W - L - R);
+  const yMin = mg ? 36 : 2, yMax = mg ? 324 : 18, [lo, hi] = mg ? [70, 180] : [3.9, 10];
+  const charW = 6.2;
+  const user = d.boluses.filter((b) => !b.auto), auto = d.boluses.filter((b) => b.auto);
+  const carbs = d.boluses.filter((b) => b.carbs > 0);
+  const carbRows = stagger(carbs.map((b) => ({ x: x(b.m) - 3, w: 10 + `${b.carbs} g`.length * charW })), 2);
+  const bolRows = stagger(user.map((b) => ({ x: x(b.m) - 5, w: 12 + String(b.units).length * charW })), 2);
+  const evRows = stagger(d.events.map((e) => ({ x: x(e.m) + 3, w: e.kind.length * charW })), 2);
+  const cTop = carbs.length ? 12 * (Math.max(...carbRows) + 1) + 4 : 4;
+  const evH = d.events.length ? 12 * (Math.max(...evRows) + 1) : 0;
+  const top = cTop, gh = 96, gBot = top + gh;
+  const y = (v) => top + (1 - (Math.min(Math.max(v, yMin), yMax) - yMin) / (yMax - yMin)) * gh;
+  const ly = gBot + evH + 4, bolH = user.length ? 10 + 12 * (Math.max(...bolRows) + 1) : 16;
+  const ry = ly + bolH + 2, rib = 6, H = ry + rib + 16;
+  let s = `<rect x="${L}" y="${y(hi)}" width="${W - L - R}" height="${y(lo) - y(hi)}" fill="var(--ok)" opacity="0.12"/>`;
+  for (const v of [lo, hi]) s += T(L - 5, y(v) + 4, String(v), { anchor: 'end', size: 10 });
+  for (let h = 0; h <= 24; h += 6) s += `<line x1="${x(h * 60)}" x2="${x(h * 60)}" y1="${top}" y2="${ry + rib}" stroke="var(--line)" opacity="0.5"/>` + T(x(h * 60), H - 2, String(h).padStart(2, '0'), { anchor: h === 24 ? 'end' : h ? 'middle' : 'start', size: 10 });
+  d.events.forEach((e, i) => {
+    s += `<line x1="${x(e.m)}" x2="${x(e.m)}" y1="${top}" y2="${gBot + evH}" stroke="var(--color-ink-2)" stroke-dasharray="2 3"/>` + T(x(e.m) + 3, gBot + 10 + 12 * evRows[i], e.kind, { size: 10, fill: 'var(--color-ink-2)' });
+  });
+  // Glucose: one polyline per run of readings in the same band, broken across gaps over 10 min.
+  let run = null;
+  const flush = () => { if (run && run.pts.length > 1) s += `<polyline points="${run.pts.join(' ')}" fill="none" stroke="${run.color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`; };
+  for (let k = 1; k < d.glucose.length; k++) {
+    const p = d.glucose[k - 1], q = d.glucose[k];
+    if (q.m - p.m > 10) { flush(); run = null; continue; }
+    const color = bandOf(q.v).color, a = `${x(p.m).toFixed(1)},${y(p.v).toFixed(1)}`, c = `${x(q.m).toFixed(1)},${y(q.v).toFixed(1)}`;
+    if (run?.color === color) run.pts.push(c);
+    else { flush(); run = { color, pts: [a, c] }; }
+  }
+  flush();
+  if (d.glucose.length === 1) s += `<circle cx="${x(d.glucose[0].m)}" cy="${y(d.glucose[0].v)}" r="2" fill="${bandOf(d.glucose[0].v).color}"/>`;
+  carbs.forEach((b, i) => {
+    const cy = 8 + 12 * carbRows[i];
+    s += `<circle cx="${x(b.m)}" cy="${cy - 4}" r="3" fill="var(--color-ink-2)"/>` + T(x(b.m) + 5, cy, `${b.carbs} g`, { size: 10, fill: 'var(--color-ink-2)' });
+  });
+  user.forEach((b, i) => {
+    const bx = x(b.m);
+    s += `<path d="M${bx - 5} ${ly} L${bx + 5} ${ly} L${bx} ${ly + 8}Z" fill="var(--insulin)"><title>${esc(b.class || 'bolus')} ${b.units} U</title></path>`;
+    s += T(bx, ly + 19 + 12 * bolRows[i], String(b.units), { anchor: 'middle', size: 10, fill: 'var(--insulin)' });
+  });
+  for (const b of auto) s += `<rect x="${x(b.m) - 1.5}" y="${ly}" width="3" height="${Math.min(14, 5 + (b.units || 0) * 6)}" rx="1" fill="var(--color-accent)"><title>automatic correction ${b.units} U</title></rect>`;
+  for (const m of d.modes) s += `<rect x="${x(m.from)}" y="${ry}" width="${Math.max(1, x(m.to) - x(m.from))}" height="${rib}" fill="${MODE_COLORS[m.mode]}"/>`;
+  const said = [`${d.readings} readings`, user.length && `boluses ${user.map((b) => `${b.units} U`).join(', ')}`, carbs.length && `carbs ${carbs.map((b) => `${b.carbs} g`).join(', ')}`, auto.length && `${auto.length} automatic corrections`, d.modes.length && `modes ${d.modes.map((m) => m.mode).join(', ')}`, d.events.length && `changes ${d.events.map((e) => e.kind).join(', ')}`].filter(Boolean).join('; ');
+  el.innerHTML = svgEl(W, H, s, `${dlong(d.date)}: ${said}`);
+}
+
+// #days:YYYY-MM-DD (from the Overview strip) scrolls to that day once it is drawn,
+// once per visit, so a redraw on resize does not jump the page.
+let focusedDay = null;
+function focusDay() {
+  const date = location.hash.split(':')[1];
+  if (!date || date === focusedDay) return;
+  focusedDay = date;
+  document.querySelectorAll('.day.focus').forEach((e) => e.classList.remove('focus'));
+  const el = $('day-' + date);
+  if (el) { el.classList.add('focus'); el.scrollIntoView({ block: 'start' }); }
+}
+
 // --- loading -------------------------------------------------------------------
 
 async function load() {
@@ -1027,10 +1210,12 @@ function renderTrends() {
 // --- tabs, range and freshness ------------------------------------------------
 
 const TABS = ['overview', 'patterns', 'days', 'trends', 'settings', 'ai'];
-const currentTab = () => (TABS.includes(location.hash.slice(1)) ? location.hash.slice(1) : 'overview');
+// The hash is the tab, optionally with a day after a colon (#days:2026-11-16).
+const currentTab = () => { const t = location.hash.slice(1).split(':')[0]; return TABS.includes(t) ? t : 'overview'; };
 
 function showTab() {
   const tab = currentTab();
+  if (tab !== 'days') focusedDay = null;
   for (const t of TABS) $('tab-' + t).hidden = t !== tab;
   document.querySelectorAll('.tabs a').forEach((a) => (a.getAttribute('href') === '#' + tab ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current')));
   drawCharts(); // measured-width charts need their panel visible
@@ -1039,7 +1224,8 @@ function showTab() {
 function drawCharts() {
   if (!report?.summary || report.summary.error) return;
   const tab = currentTab();
-  if (tab === 'overview') { drawStack(); drawAgp(true); }
+  if (tab === 'overview') { drawStack(); drawAgp(true); drawStrip(); }
+  if (tab === 'days') loadDays();
   if (tab === 'patterns') { drawAgp(false); drawHours(); }
 }
 
