@@ -40,7 +40,7 @@
     --btn-shadow: inset 0 1px 0 oklch(100% 0 0 / 0.07), 0 2px 0 oklch(8% 0.01 170);
     --primary-bg: var(--color-accent); --primary-ink: var(--color-accent-ink); --primary-hover: oklch(86% 0.1 160);
     --tile-bg: var(--color-surface); --lead-bg: var(--color-accent-soft); --lead-ink: var(--color-ink);
-    --g-accent: oklch(72% 0.08 215); --g-low: oklch(66% 0.15 35); --g-ok: oklch(74% 0.12 160); --g-high: oklch(80% 0.13 82); --g-hours: oklch(74% 0.12 160);
+    --g-accent: oklch(72% 0.08 215); --g-low: oklch(66% 0.15 35); --g-ok: oklch(74% 0.12 160); --g-high: oklch(80% 0.13 82);
     --note-bg: oklch(27% 0.045 98); --note-edge: var(--color-rule-2); --badge-bg: var(--color-accent-soft);
     --g-vlow: oklch(56% 0.17 22); --g-vhigh: oklch(72% 0.15 52);
     --agp-outer: oklch(72% 0.08 215 / 0.22); --agp-inner: oklch(72% 0.08 215 / 0.5); --agp-edge: oklch(72% 0.08 215 / 0.9);
@@ -58,7 +58,7 @@
     --btn-bg: var(--color-surface); --btn-edge: var(--color-rule); --btn-hover: var(--color-paper-2);
     --btn-shadow: inset 0 1px 0 var(--glint), 0 2px 0 var(--color-rule);
     --primary-hover: oklch(42% 0.11 162);
-    --g-accent: oklch(52% 0.09 215); --g-low: oklch(55% 0.15 35); --g-ok: var(--color-accent); --g-high: oklch(72% 0.13 80); --g-hours: var(--color-accent);
+    --g-accent: oklch(52% 0.09 215); --g-low: oklch(55% 0.15 35); --g-ok: var(--color-accent); --g-high: oklch(72% 0.13 80);
     --note-bg: oklch(91.5% 0.064 98); --note-edge: var(--color-rule);
     --g-vlow: oklch(45% 0.17 22); --g-vhigh: oklch(62% 0.16 52);
     --agp-outer: oklch(52% 0.09 215 / 0.16); --agp-inner: oklch(52% 0.09 215 / 0.38); --agp-edge: oklch(52% 0.09 215 / 0.8);
@@ -146,9 +146,6 @@
   th:first-child, td:first-child { text-align: left; position: sticky; left: 0; background: var(--color-surface); }
   td:first-child { font-family: var(--font-outlier); }
   .caveat { max-width: 75ch; margin-top: var(--space-sm); padding: var(--space-xs) var(--space-sm); background: var(--note-bg); border: var(--rule-hair) solid var(--note-edge); border-radius: var(--radius-input); color: var(--color-ink); font-size: var(--text-sm); }
-  .hours { display: grid; grid-template-columns: repeat(24, minmax(0, 1fr)); gap: var(--space-3xs); align-items: end; height: 72px; }
-  .hours div { background: var(--g-hours); border-radius: 2px 2px 0 0; min-height: 1px; }
-  .hourlabels { display: grid; grid-template-columns: repeat(24, minmax(0, 1fr)); font-family: var(--font-outlier); font-size: var(--text-xs); color: var(--color-muted); text-align: center; }
   pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: var(--space-sm) 0 0; padding: var(--space-sm); max-height: 420px; overflow: auto; background: var(--field-bg); border: var(--rule-hair) solid var(--color-rule); border-radius: var(--radius-input); font-family: var(--font-outlier); font-size: var(--text-sm); color: var(--color-ink-2); }
   .promptbox { margin-top: var(--space-sm); }
   .promptbox summary { cursor: pointer; width: fit-content; min-height: 32px; padding-block: var(--space-2xs); color: var(--color-ink-2); font-size: var(--text-sm); font-weight: 500; }
@@ -253,13 +250,21 @@
       <h2>Daily pattern <span class="sub muted" id="agpSub"></span></h2>
       <div class="chartbox" id="agp"></div>
       <p class="legend" id="agpLegend"></p>
+      <div id="hourCharts">
+        <h3>Time in ranges by hour <span class="sub muted">share of each hour's readings · number: % in range 3.9–10.0</span></h3>
+        <div class="chartbox" id="hourBands"></div>
+        <div id="hourCiq">
+          <h3>Control-IQ automatic corrections by hour <span class="sub muted" id="hourAutoSub"></span></h3>
+          <div class="chartbox" id="hourAuto"></div>
+          <h3>Mode by hour <span class="sub muted">share of each hour, complete days · Automatic is the plain background</span></h3>
+          <div class="chartbox" id="hourMode"></div>
+          <p class="legend" id="hourModeLegend"></p>
+        </div>
+      </div>
     </section>
 
     <section id="ciqSection" class="rep hidden">
       <h2>Control-IQ day review <span class="sub muted" id="ciqSub"></span></h2>
-      <h3>Automatic correction boluses by hour <span class="sub">(pump clock, complete days only)</span></h3>
-      <div class="hours" id="ciqHours"></div>
-      <div class="hourlabels" id="ciqHourLabels"></div>
       <h3>Per day</h3>
       <div class="scroll"><table id="ciqDays"></table></div>
       <p class="caveat" id="ciqCaveat"></p>
@@ -394,6 +399,9 @@ const chip = (ok, yes, no) => `<span class="chip ${ok ? 'ok' : 'watch'}">${ok ? 
 // Charts are drawn at the container's real pixel width, so text stays 10-12 px.
 const widthOf = (el) => Math.max(260, Math.floor(el.clientWidth));
 const svgEl = (w, h, inner, label) => `<svg viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" role="img" aria-label="${esc(label)}">${inner}</svg>`;
+// Left/right plot margins shared by the AGP and the by-hour charts under it, so
+// all of them sit on one 24 h x scale.
+const PLOT_L = 40, PLOT_R = 12;
 const T = (x, y, str, a = {}) => `<text x="${x}" y="${y}" font-size="${a.size || 12}" fill="${a.fill || 'var(--muted)'}" text-anchor="${a.anchor || 'start'}"${a.weight ? ` font-weight="${a.weight}"` : ''} font-family="var(--font-outlier)">${esc(str)}</text>`;
 
 function renderGlucose(s) {
@@ -450,7 +458,7 @@ function drawAgp(mini) {
   $(mini ? 'agpMiniSub' : 'agpSub').textContent = a?.error ? `Unavailable: ${a.error}` : `Ambulatory glucose profile: all ${a?.readings?.toLocaleString('en') ?? 0} readings laid over one 24 h pump clock, smoothed 15 min slots`;
   if (!slots.length) { el.innerHTML = a?.error ? '' : '<p class="small muted">No CGM readings in this window.</p>'; if (legend) legend.innerHTML = ''; return; }
   const c = a.consensusThresholds, mg = isMgdl();
-  const compact = mini || innerWidth < 640, W = widthOf(el), H = mini ? 190 : compact ? 230 : 280, L = 40, R = 12, Tp = 10, B = 26;
+  const compact = mini || innerWidth < 640, W = widthOf(el), H = mini ? 190 : compact ? 230 : 280, L = PLOT_L, R = PLOT_R, Tp = 10, B = 26;
   const yMax = mg ? 324 : 18;
   const y = (v) => Tp + (1 - Math.min(v, yMax) / yMax) * (H - Tp - B);
   const x = (min) => L + (min / 1440) * (W - L - R);
@@ -472,6 +480,104 @@ function drawAgp(mini) {
   if (!legend) return;
   const f = (v) => num(v, mg ? 0 : 1);
   legend.innerHTML = `<span><i class="sw-line"></i>Median</span><span><i style="background:var(--agp-inner)"></i>25–75 % of readings</span><span><i style="background:var(--agp-outer)"></i>5–95 %</span><span><i style="background:var(--ok);opacity:.35"></i>Target ${f(c.low)}–${f(c.high)}</span><span><i class="sw-dash"></i>${f(c.veryLow)} and ${f(c.veryHigh)} ${esc(a.unit)}</span>`;
+}
+
+// G4: three by-hour charts under the full AGP, on its x scale (same width, margins
+// and 3 h gridlines), so "where glucose is high" and "where Control-IQ works
+// hardest" read off one clock. Every value is printed; when the columns are too
+// narrow for it, alternate hours drop to a second line.
+function drawHours() {
+  const hr = report?.hourly, ciq = report?.controlIq;
+  const rows = hr && !hr.error ? hr.byHour : [];
+  const ciqOn = isControlIq() && ciq && !ciq.error && ciq.summary?.completeDays > 0;
+  $('hourCharts').hidden = !rows.length && !hr?.error;
+  $('hourCiq').hidden = !ciqOn;
+  const W = widthOf($('agp')), L = PLOT_L, R = PLOT_R, cw = (W - L - R) / 24, x = (h) => L + h * cw;
+  const showTick = (h) => !(innerWidth < 640 && W < 640) || h % 6 === 0;
+  const hh = (h) => String(h).padStart(2, '0') + ':00';
+  // Gridlines from top to bottom of the plot and hour labels under it, as on the AGP.
+  const axis = (top, bottom) => {
+    let s = '';
+    for (let h = 0; h <= 24; h += 3) {
+      s += `<line x1="${x(h)}" x2="${x(h)}" y1="${top}" y2="${bottom}" stroke="var(--line)" opacity="0.6"/>`;
+      if (showTick(h)) s += T(x(h), bottom + 14, String(h).padStart(2, '0'), { anchor: 'middle', size: 11 });
+    }
+    return s;
+  };
+  // A value row (two lines when the labels do not fit one column); returns [svg, height].
+  const valueRow = (y, label, vals, fill = () => 'var(--muted)') => {
+    const texts = vals.map((v) => (v == null ? '' : String(v)));
+    const two = Math.max(...texts.map((t) => t.length)) * 6.4 + 2 > cw;
+    let s = T(L - 6, y + 10, label, { anchor: 'end', size: 10 });
+    texts.forEach((t, h) => { if (t) s += T(x(h) + cw / 2, y + 10 + (two && h % 2 ? 12 : 0), t, { anchor: 'middle', size: 10, fill: fill(h) }); });
+    return [s, two ? 26 : 14];
+  };
+
+  // 1. Five consensus bands per hour, very low at the bottom.
+  if (hr?.error) $('hourBands').innerHTML = `<p class="small muted">Unavailable: ${esc(hr.error)}</p>`;
+  else if (rows.length) {
+    const byH = new Map(rows.map((r) => [r.hourNum, r]));
+    const tir = Array.from({ length: 24 }, (_, h) => (byH.has(h) ? Math.round(byH.get(h).consensusBands.inRange) : null));
+    const [vals, vh] = valueRow(0, 'TIR', tir, (h) => (tir[h] < 70 ? 'var(--high)' : 'var(--muted)'));
+    const top = vh + 2, ch = 64, H = top + ch + 20;
+    let s = vals;
+    for (const [h, r] of byH) {
+      let y0 = top + ch;
+      const b = r.consensusBands;
+      s += `<g><title>${hh(h)}: ${[...BANDS].reverse().map((x2) => `${x2.label.toLowerCase()} ${num(b[x2.k])} %`).join(', ')} (${r.readings} readings)</title>`;
+      for (const band of [...BANDS].reverse()) {
+        const hgt = (b[band.k] / 100) * ch;
+        if (hgt > 0) s += `<rect x="${x(h) + 1}" y="${y0 - hgt}" width="${Math.max(1, cw - 2)}" height="${hgt}" fill="${band.color}"/>`;
+        y0 -= hgt;
+      }
+      s += '</g>';
+    }
+    $('hourBands').innerHTML = svgEl(W, H, s + axis(top, top + ch), `Time in ranges for each clock hour: ${tir.map((v, h) => `${hh(h)} ${v ?? 'no data'}${v == null ? '' : ' %'}`).join(', ')}`);
+  } else $('hourBands').innerHTML = '';
+  if (!ciqOn) return;
+
+  // 2. Automatic corrections per hour: bar and n = count, days = days with at least one.
+  const bh = ciq.byHour, n = ciq.summary.completeDays;
+  $('hourAutoSub').textContent = `pump clock, ${n} complete day${n === 1 ? '' : 's'} · bar and n: automatic corrections · days: days with at least one`;
+  {
+    const counts = bh.map((h) => h.autoBolus.count), max = Math.max(1, ...counts), ch = 48, top = 4;
+    let s = '';
+    bh.forEach((h, i) => {
+      const hgt = (counts[i] / max) * ch;
+      if (hgt) s += `<rect x="${x(i) + cw * 0.18}" y="${top + ch - hgt}" width="${cw * 0.64}" height="${hgt}" rx="2" fill="var(--color-accent)"><title>${hh(i)}: ${counts[i]} automatic corrections on ${h.autoBolus.daysWithAutoBolus} of ${n} days</title></rect>`;
+    });
+    s += `<line x1="${L}" x2="${W - R}" y1="${top + ch}" y2="${top + ch}" stroke="var(--line)"/>` + T(L - 6, top + 8, String(max), { anchor: 'end', size: 10 });
+    const [r1, h1] = valueRow(top + ch + 3, 'n', counts.map((c) => c || null), () => 'var(--color-ink)');
+    const [r2, h2] = valueRow(top + ch + 3 + h1, 'days', bh.map((h) => h.autoBolus.daysWithAutoBolus || null));
+    const bottom = top + ch + 3 + h1 + h2;
+    $('hourAuto').innerHTML = svgEl(W, bottom + 20, s + r1 + r2 + axis(top, bottom), `Automatic correction boluses by clock hour over ${n} complete days: ${bh.map((h, i) => `${hh(i)} ${counts[i]} on ${h.autoBolus.daysWithAutoBolus} days`).join(', ')}`);
+  }
+
+  // 3. Mode share per hour: Automatic is the plain background, special modes stacked from the top.
+  {
+    const modes = ['sleep', 'exercise', 'manual'].filter((m) => bh.some((h) => h.modePercent[m] > 0));
+    const names = { sleep: 'Sleep', exercise: 'Exer.', manual: 'Man.' };
+    const ch = 36, top = 2;
+    let s = '';
+    bh.forEach((h, i) => {
+      let y0 = top;
+      s += `<g><title>${hh(i)}: ${Object.entries(h.modePercent).filter(([, v]) => v > 0).map(([k, v]) => `${k} ${num(v, 0)} %`).join(', ')}</title><rect x="${x(i) + 1}" y="${top}" width="${Math.max(1, cw - 2)}" height="${ch}" fill="var(--mode-auto)"/>`;
+      for (const m of modes) {
+        const hgt = (h.modePercent[m] / 100) * ch;
+        if (hgt > 0) s += `<rect x="${x(i) + 1}" y="${y0}" width="${Math.max(1, cw - 2)}" height="${hgt}" fill="${MODE_COLORS[m]}"/>`;
+        y0 += hgt;
+      }
+      s += '</g>';
+    });
+    let y = top + ch + 3;
+    for (const m of modes) {
+      const [r, rh] = valueRow(y, names[m], bh.map((h) => (h.modePercent[m] > 0 ? Math.max(1, Math.round(h.modePercent[m])) : null)), () => MODE_COLORS[m]);
+      s += r; y += rh;
+    }
+    $('hourMode').innerHTML = svgEl(W, y + 20, s + axis(top, y), `Control-IQ mode share by clock hour: ${modes.length ? modes.map((m) => `${m} in ${bh.filter((h) => h.modePercent[m] > 0).length} hours`).join(', ') : 'Automatic throughout'}`);
+    const sw = (k, label) => `<span><i style="background:${MODE_COLORS[k]}"></i>${label}</span>`;
+    $('hourModeLegend').innerHTML = sw('sleep', 'Sleep') + sw('exercise', 'Exercise') + sw('manual', 'Manual (algorithm off)') + sw('automatic', 'Automatic') + '<span>Numbers: % of the hour</span>';
+  }
 }
 
 // One daily-insulin figure everywhere: the mean over the window's complete days
@@ -551,9 +657,6 @@ function renderControlIq() {
     ? `${num(s.meanAutoBolusPerDay.count)} automatic corrections a day, ${num(s.meanAutoBolusPerDay.units, 2)} U, ${num(s.autoBolusShareOfTddPercent)} % of total daily dose. Over ${s.completeDays} of ${s.daysInWindow} day(s) with complete pump data (confidence: ${s.confidence}).`
     : `No complete days in this window (${s.daysInWindow} day(s) seen), so no period figures.`;
   $('ciqSub').textContent = `${s.completeDays} of ${s.daysInWindow} day(s) complete`;
-  const max = Math.max(1, ...r.byHour.map((h) => h.autoBolus.count));
-  $('ciqHours').innerHTML = r.byHour.map((h) => `<div style="height:${(h.autoBolus.count / max) * 100}%" title="${String(h.hour).padStart(2, '0')}:00 — ${h.autoBolus.count} automatic corrections on ${h.autoBolus.daysWithAutoBolus} of ${h.nDays} days"></div>`).join('');
-  $('ciqHourLabels').innerHTML = r.byHour.map((h) => `<span>${h.hour % 6 === 0 ? h.hour : ''}</span>`).join('');
   const pct = (d, k) => num(d.modes[k]?.percent, 0);
   $('ciqDays').innerHTML = '<tr><th>Day</th><th>Auto %</th><th>Sleep %</th><th>Exercise %</th><th>Manual %</th><th>No data %</th><th>Auto corrections</th><th>User bolus U</th><th>TDD U</th><th>Complete</th></tr>' +
     r.days.map((d) => `<tr><td>${esc(d.date)}</td><td>${pct(d, 'automatic')}</td><td>${pct(d, 'sleep')}</td><td>${pct(d, 'exercise')}</td><td>${pct(d, 'manual')}</td><td>${pct(d, 'unknown')}</td><td>${d.autoBolus.count} · ${num(d.autoBolus.units, 2)} U</td><td>${num(d.manualBolusUnits, 2)}</td><td>${num(d.totalDailyDose, 2)}</td><td title="${esc((d.incompleteReasons || []).join('; '))}">${d.complete ? 'yes' : 'no'}</td></tr>`).join('');
@@ -937,7 +1040,7 @@ function drawCharts() {
   if (!report?.summary || report.summary.error) return;
   const tab = currentTab();
   if (tab === 'overview') { drawStack(); drawAgp(true); }
-  if (tab === 'patterns') drawAgp(false);
+  if (tab === 'patterns') { drawAgp(false); drawHours(); }
 }
 
 function markPreset() {
