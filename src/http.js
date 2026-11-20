@@ -275,6 +275,68 @@ const EXPORTS = {
   hourly: (w) => callTool('get_hourly_trends', w),
 };
 
+// GET /api/days — the Days tab: one row per pump-local day, newest first. Built
+// from the MCP tools: get_trend (day) for the five bands and carbs,
+// get_controliq_review for TDD and automatic corrections, get_chart_series per
+// day for the glucose line and boluses, get_basal_delivery intervals for the
+// mode ribbon and get_device_events for site, cartridge and sensor changes.
+// Times inside a day are minutes on the pump clock (Glooko writes it with a Z).
+const DAYS_MAX = 92;
+async function daysPayload(w) {
+  const s = Date.parse(w.start), e = Date.parse(w.end);
+  if (!(e > s)) return { status: 400, body: { error: 'end must be after start' } };
+  if ((e - s) / 864e5 > DAYS_MAX) return { status: 400, body: { error: `The Days view covers up to ${DAYS_MAX} days; pick a shorter range.` } };
+  // The trend runs first so any Glooko top-up for the window happens once.
+  const trend = await callTool('get_trend', { ...w, granularity: 'day' });
+  if (trend.error) return { status: 400, body: trend };
+  const dates = [];
+  for (let t = Math.floor(s / 864e5) * 864e5; t < e; t += 864e5) dates.push(new Date(t).toISOString().slice(0, 10));
+  const clip = (d) => ({ start: new Date(Math.max(s, Date.parse(d))).toISOString(), end: new Date(Math.min(e, Date.parse(d) + 864e5)).toISOString() });
+  const [basal, events, ciq, ...series] = await Promise.all([
+    callTool('get_basal_delivery', { ...w, includeIntervals: true }),
+    callTool('get_device_events', w),
+    callTool('get_controliq_review', w),
+    // 288 = one point per 5-min reading, so a full day comes back unsampled.
+    ...dates.map((d) => callTool('get_chart_series', { ...clip(d), maxPoints: 288 })),
+  ]);
+  const minuteOf = (iso, date) => (Date.parse(iso) - Date.parse(date)) / 60000;
+  const byBucket = new Map(trend.buckets.map((b) => [b.bucket, b]));
+  const ciqDays = new Map((ciq.days || []).map((d) => [d.date, d]));
+  const modes = (basal.pumpModes?.intervals || []).filter((i) => ['sleep', 'exercise', 'manual'].includes(i.mode));
+  const ev = (list, kind) => (list || []).map((t) => ({ kind, t }));
+  const allEvents = [...ev(events.siteChanges, 'site'), ...ev(events.cartridgeChanges, 'cartridge'), ...ev(events.sensorChanges, 'sensor')];
+  const days = dates.map((date, i) => {
+    const t = byBucket.get(date), c = ciqDays.get(date), cs = series[i];
+    const d0 = Date.parse(date), d1 = d0 + 864e5;
+    return {
+      date,
+      readings: t?.glucose?.cgmReadingCount ?? 0,
+      bands: t?.glucose?.consensusBands ?? null,
+      carbsGrams: t?.carbs?.carbsGrams ?? 0,
+      tdd: c?.totalDailyDose ?? null,
+      tddComplete: c?.complete ?? false,
+      autoCorrections: c ? c.autoBolus : null,
+      // The day's end is inclusive in get_chart_series; the next midnight belongs to the next row.
+      glucose: cs.error ? [] : cs.points.map((p) => ({ m: minuteOf(p.t, date), v: p.avg })).filter((p) => p.m < 1440),
+      boluses: cs.error ? [] : cs.boluses.map((b) => ({ m: minuteOf(b.t, date), units: b.units, carbs: b.carbs, auto: b.class === 'Automatic Correction Bolus', class: b.class })).filter((b) => b.m < 1440),
+      modes: modes
+        .filter((x) => Date.parse(x.end) > d0 && Date.parse(x.start) < d1)
+        .map((x) => ({ mode: x.mode, from: Math.max(0, minuteOf(x.start, date)), to: Math.min(1440, minuteOf(x.end, date)) })),
+      events: allEvents.filter((x) => x.t.slice(0, 10) === date).map((x) => ({ kind: x.kind, m: minuteOf(x.t, date) })),
+      ...(cs.error ? { error: cs.error } : {}),
+    };
+  }).reverse();
+  return {
+    status: 200,
+    body: {
+      window: w,
+      unit: trend.unit,
+      days,
+      ...(basal.error || events.error || ciq.error ? { partErrors: { basal: basal.error, events: events.error, controlIq: ciq.error } } : {}),
+    },
+  };
+}
+
 // The t:connect settings text is ~3 KB; anything near this cap is not a paste.
 const PASTE_MAX_BYTES = 64 * 1024;
 
@@ -366,13 +428,14 @@ async function handleWeb(req, res, url) {
       // others intact and comes back as { error }. The summary runs first so any
       // Glooko top-up for the window happens once, before the others read it.
       const summary = await callTool('get_diabetes_summary', w);
-      const [basal, controlIq, health, tddTrend, agp, hourly] = await Promise.all([
+      const [basal, controlIq, health, tddTrend, agp, hourly, daily] = await Promise.all([
         callTool('get_basal_delivery', { ...w, includeIntervals: false }),
         callTool('get_controliq_review', w),
         callTool('get_health_context', { ...w, granularity: 'week' }),
         callTool('get_tdd_trend', w),
         callTool('get_agp', w),
         callTool('get_hourly_trends', w),
+        callTool('get_trend', { ...w, granularity: 'day' }), // Overview's days strip
       ]);
       return sendJson(res, 200, {
         window: w,
@@ -383,6 +446,7 @@ async function handleWeb(req, res, url) {
         tddTrend,
         agp,
         hourly,
+        daily,
       });
     }
 
@@ -393,6 +457,11 @@ async function handleWeb(req, res, url) {
         callTool('get_tdd_trend', w),
       ]);
       return sendJson(res, 200, { window: w, health, tddTrend });
+    }
+
+    if (url.pathname === '/api/days') {
+      const { status, body } = await daysPayload(w);
+      return sendJson(res, status, body);
     }
 
     if (url.pathname === '/api/export') {

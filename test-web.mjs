@@ -63,7 +63,7 @@ if (NOBASIC) {
 } else {
   // 1. Auth: 401 with a realm without a credential, wrong one, or the MCP Bearer.
   for (const h of [{}, { Authorization: 'Basic ' + Buffer.from('mcp:s3crey').toString('base64') }, { Authorization: 'Bearer test-token' }]) {
-    for (const p of ['/', '/api/config', `/api/report?${win}`, `/api/trends?${win}`]) {
+    for (const p of ['/', '/api/config', `/api/report?${win}`, `/api/trends?${win}`, `/api/days?${win}`]) {
       const r = await get(p, h);
       assert.strictEqual(r.status, 401, `${p} ${JSON.stringify(h)}`);
       assert.match(r.headers.get('www-authenticate') || '', /^Basic realm="ridgeline"/);
@@ -123,6 +123,33 @@ if (NOBASIC) {
   assert.strictEqual(tr.tddTrend.windowMean.completeDays, 2);
   assert.deepStrictEqual(tr.health.buckets.find((b) => b.health).health.steps, { total: 20000, perDay: 10000, days: 2 });
   assert.strictEqual((await get('/api/trends')).status, 400);
+
+  // 4c. Days strip on Overview: get_trend by day inside the report.
+  assert.deepStrictEqual(rep.daily.buckets.map((b) => [b.bucket, b.glucose.consensusBands.inRange]), [['2001-03-10', 48.26], ['2001-03-11', 70.83]]);
+
+  // 4d. Days tab: one row per pump-local day, newest first.
+  const days = await json(`/api/days?${win}`);
+  assert.deepStrictEqual(Object.keys(days).sort(), ['days', 'unit', 'window']);
+  assert.strictEqual(days.unit, 'mmol/L');
+  assert.deepStrictEqual(days.days.map((d) => d.date), ['2001-03-11', '2001-03-10']);
+  const [d11, d10] = days.days;
+  assert.deepStrictEqual(
+    days.days.map((d) => [d.readings, d.glucose.length, d.bands.inRange, d.tdd, d.tddComplete, d.carbsGrams, d.autoCorrections.count]),
+    [[288, 288, 70.83, 27, true, 0, 1], [288, 288, 48.26, 37.5, true, 100, 2]]
+  );
+  // Glucose in minutes of the pump-clock day, every 5-min reading, nothing past midnight.
+  assert.deepStrictEqual([d10.glucose[0], d10.glucose.at(-1).m], [{ m: 0, v: 8 }, 1435]);
+  assert.deepStrictEqual(
+    d10.boluses.map((b) => [b.m, b.units, b.carbs, b.auto]),
+    [[180, 1.25, 0, true], [480, 4, 40, false], [780, 7.5, 60, false], [900, 0.75, 0, true]]
+  );
+  assert.deepStrictEqual(d10.modes, [{ mode: 'sleep', from: 0, to: 360 }, { mode: 'exercise', from: 1020, to: 1080 }, { mode: 'sleep', from: 1380, to: 1440 }]);
+  assert.deepStrictEqual(d11.modes, [{ mode: 'sleep', from: 0, to: 360 }, { mode: 'manual', from: 720, to: 840 }]);
+  assert.deepStrictEqual([d11.events, d10.events], [[{ kind: 'cartridge', m: 610 }], []]);
+  assert.strictEqual((await get('/api/days')).status, 400);
+  const long = await get('/api/days?start=2001-01-01T00:00:00.000Z&end=2001-04-10T00:00:00.000Z');
+  assert.strictEqual(long.status, 400);
+  assert.match((await long.json()).error, /up to 92 days/);
 
   // 5. Exports: one per deep-dive file, each straight from its MCP tool.
   const tl = await json(`/api/export?type=timeline&${win}`);
