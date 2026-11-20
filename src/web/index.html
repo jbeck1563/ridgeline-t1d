@@ -171,8 +171,9 @@
   .custom { display: flex; flex-wrap: wrap; gap: var(--space-sm); align-items: end; flex-basis: 100%; justify-content: flex-end; }
   .fresh { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2xs) var(--space-sm); margin: 0; padding-block: var(--space-sm) 0; font-size: var(--text-sm); color: var(--color-muted); }
   .fresh b { color: var(--color-ink); font-weight: 500; }
-  .fresh .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); flex: none; }
-  .fresh .dot.stale { background: var(--high); }
+  /* Not glucose colours: the archive's freshness is app state, not a reading. */
+  .fresh .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--color-accent); flex: none; }
+  .fresh .dot.stale { background: var(--color-error); }
   .fresh button { min-height: 32px; padding: 0 var(--space-sm); font-size: var(--text-sm); }
   @media (max-width: 40rem) { .topbar .shell { flex-direction: column; flex-wrap: nowrap; align-items: stretch; } .range { justify-content: space-between; } .presets button { min-width: 2.9rem; padding-inline: var(--space-xs); } .custom { justify-content: flex-start; } }
   .panel { display: grid; gap: var(--space-md); min-width: 0; }
@@ -1366,7 +1367,7 @@ function drawTrends() {
     s += grid(ys(sm), sm, `${sm / 1000}k`) + grid(ys(0), 0) + T(L - 6, H - 18, 'sleep', { anchor: 'end', size: 10 });
     weeks.forEach((w, i) => {
       if (w.steps != null) {
-        s += `<rect x="${x(i) + cw * 0.25}" y="${ys(w.steps)}" width="${cw * 0.5}" height="${ys(0) - ys(w.steps)}" rx="2" fill="var(--g-accent)" opacity="0.85"><title>Week of ${esc(w.week)}: ${w.steps} steps a day</title></rect>`;
+        s += `<rect x="${x(i) + cw * 0.25}" y="${ys(w.steps)}" width="${cw * 0.5}" height="${ys(0) - ys(w.steps)}" rx="2" fill="var(--color-muted)" opacity="0.85"><title>Week of ${esc(w.week)}: ${w.steps} steps a day</title></rect>`;
         if (!thin(i)) s += T(x(i) + cw / 2, ys(w.steps) - 4, `${num(w.steps / 1000, w.steps < 9950 ? 1 : 0)}k`, { anchor: 'middle', size: 10, fill: 'var(--color-ink-2)' });
       }
       if (w.sleepH != null && !thin(i)) s += T(x(i) + cw / 2, H - 18, `${num(w.sleepH)}h`, { anchor: 'middle', size: 10, fill: 'var(--color-ink-2)' });
@@ -1374,7 +1375,7 @@ function drawTrends() {
     $('wHealth').innerHTML = svgEl(W, H, s + lab(H), `Weekly steps a day and sleep: ${weeks.map((w) => `${w.week} ${w.steps ?? '—'} steps, ${num(w.sleepH)} h sleep`).join('; ')}`);
   }
   $('wLegend').innerHTML = (hasTdd ? '<span><i style="background:var(--insulin)"></i>Basal</span><span><i style="background:var(--color-ink-2)"></i>User bolus</span><span><i style="background:var(--color-accent)"></i>Automatic corrections</span><span><i class="sw-line"></i>4-week TDD / mean glucose</span><span><i style="background:var(--color-ink-2);opacity:.35"></i>Under 5 complete days</span>' : '<span><i class="sw-line"></i>Mean glucose</span>') +
-    (hasHealth ? '<span><i style="background:var(--g-accent)"></i>Steps a day</span>' : '');
+    (hasHealth ? '<span><i style="background:var(--color-muted)"></i>Steps a day</span>' : '');
 }
 
 // --- tabs, range and freshness ------------------------------------------------
