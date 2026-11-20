@@ -9,7 +9,7 @@
   "scripts": {
     "start": "node src/server.js",
     "selftest": "node test/selftest.js",
-    "test": "node test/selftest.js && node test/resilience.test.js && node test/trend.test.js && node test/chart.test.js && node --no-warnings test/insulin.test.js && node --no-warnings test/extremes.test.js && node --no-warnings test/ranking.test.js && node --no-warnings test/units.test.js && node --no-warnings test/source_unit.test.js && node --no-warnings test/dayclass.test.js && node --no-warnings test/bolus_fields.test.js && node test/basal.test.js && node test/basal_orientation.test.js && node test/device.test.js && node test/dailyinsulin.test.js && node --no-warnings test/schema.test.js && node --no-warnings test/transport.test.js && node --no-warnings test/mcp-handshake.js && node --no-warnings test/sync.test.js && node --no-warnings test/coverage.test.js && node --no-warnings test/offline.test.js && node --no-warnings test/archive.test.js"
+    "test": "node test-web.mjs && node test-tdd.mjs && node test-ranges.mjs && node test-controliq.mjs && node test-health.mjs && node test-pump-settings.mjs && node test-refresh.mjs && node test-tandem.mjs && OMNI_DB_PATH=\"$(mktemp -d)/omni-endo.db\" node test-mydata.mjs"
   },
   "license": "MIT",
   "dependencies": {
