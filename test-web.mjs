@@ -117,9 +117,16 @@ if (NOBASIC) {
   const wk = rep.health.buckets.find((b) => b.health);
   assert.deepStrictEqual(wk.health.steps, { total: 20000, perDay: 10000, days: 2 });
 
-  // 4b. Trends: only the weekly parts, for the Trends tab's own (wider) window.
+  // 4b. Trends: the weekly parts and the per-day Control-IQ review (daily TDD chart),
+  // for the Trends tab's own (wider) window.
   const tr = await json(`/api/trends?start=2001-02-10T00:00:00.000Z&end=2001-03-12T00:00:00.000Z`);
-  assert.deepStrictEqual(Object.keys(tr).sort(), ['health', 'tddTrend', 'window']);
+  assert.deepStrictEqual(Object.keys(tr).sort(), ['controlIq', 'health', 'tddTrend', 'window']);
+  assert.strictEqual(tr.controlIq.days.length, 30);
+  assert.deepStrictEqual(tr.controlIq.days.filter((d) => d.complete).map((d) => d.date), ['2001-03-10', '2001-03-11']);
+  for (const d of tr.controlIq.days.filter((x) => x.complete)) {
+    const r = rep.controlIq.days.find((x) => x.date === d.date);
+    assert.deepStrictEqual([d.basalUnits, d.manualBolusUnits, d.autoBolus, d.totalDailyDose], [r.basalUnits, r.manualBolusUnits, r.autoBolus, r.totalDailyDose]);
+  }
   assert.strictEqual(tr.tddTrend.windowMean.completeDays, 2);
   assert.deepStrictEqual(tr.health.buckets.find((b) => b.health).health.steps, { total: 20000, perDay: 10000, days: 2 });
   assert.strictEqual((await get('/api/trends')).status, 400);
