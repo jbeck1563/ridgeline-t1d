@@ -458,13 +458,15 @@ async function handleWeb(req, res, url) {
       });
     }
 
-    // Trends tab: only the weekly parts, so it can open on a longer window than the rest.
+    // Trends tab: the weekly parts and the Control-IQ review (its days are the daily
+    // TDD chart), so it can open on a longer window than the rest.
     if (url.pathname === '/api/trends') {
-      const [health, tddTrend] = await Promise.all([
+      const [health, tddTrend, controlIq] = await Promise.all([
         callTool('get_health_context', { ...w, granularity: 'week' }),
         callTool('get_tdd_trend', w),
+        callTool('get_controliq_review', w),
       ]);
-      return sendJson(res, 200, { window: w, health, tddTrend });
+      return sendJson(res, 200, { window: w, health, tddTrend, controlIq });
     }
 
     if (url.pathname === '/api/days') {

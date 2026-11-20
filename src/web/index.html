@@ -283,12 +283,6 @@
       </div>
     </section>
 
-    <section id="ciqSection" class="rep hidden">
-      <h2>Control-IQ day review <span class="sub muted" id="ciqSub"></span></h2>
-      <h3>Per day</h3>
-      <div class="scroll"><table id="ciqDays"></table></div>
-      <p class="caveat" id="ciqCaveat"></p>
-    </section>
   </div>
 
   <div class="panel" id="tab-days" hidden>
@@ -298,23 +292,52 @@
       <p class="small muted" id="daysStatus"></p>
       <div id="daysList"></div>
     </section>
+
+    <section id="ciqSection" class="rep hidden">
+      <h2>Control-IQ day review <span class="sub muted" id="ciqSub"></span></h2>
+      <details class="promptbox"><summary>Show the numbers</summary>
+        <div class="scroll"><table id="ciqDays"></table></div>
+      </details>
+      <p class="caveat" id="ciqCaveat"></p>
+    </section>
   </div>
 
   <div class="panel" id="tab-trends" hidden>
     <p class="small muted" id="trendsNote"></p>
-    <section id="tddSection" class="hidden">
-      <h2>Weekly total daily dose</h2>
-      <p class="small" id="tddSummary"></p>
-      <svg id="tddChart" class="chart" role="img" aria-label="Weekly mean total daily dose"></svg>
-      <p class="small muted">Bars: weekly mean TDD (faded = under 5 complete days, left out of the trend). Line: 4-week rolling mean.</p>
-      <div class="scroll"><table id="tddTable"></table></div>
+    <section id="weeklySection" class="rep hidden">
+      <h2>Weekly trends <span class="sub muted" id="wSub"></span></h2>
+      <h3>Time in ranges <span class="sub muted">% in range above each week</span></h3>
+      <div class="chartbox" id="wBands"></div>
+      <div id="wTddBlock">
+        <h3>Total daily dose <span class="sub muted">bars: weekly mean U/day, split basal / user bolus / automatic · line: 4-week rolling mean</span></h3>
+        <p class="small" id="tddSummary"></p>
+        <div class="chartbox" id="wTdd"></div>
+      </div>
+      <h3>Mean glucose and variability <span class="sub muted">labels: CV</span></h3>
+      <div class="chartbox" id="wMean"></div>
+      <div id="wHealthBlock">
+        <h3>Activity and sleep <span class="sub muted">Google Health · steps a day above, sleep under each week</span></h3>
+        <div class="chartbox" id="wHealth"></div>
+      </div>
+      <p class="legend" id="wLegend"></p>
+      <details class="promptbox"><summary>Show the numbers</summary>
+        <div id="tddSection" class="hidden">
+          <h3>Total daily dose by week</h3>
+          <div class="scroll"><table id="tddTable"></table></div>
+        </div>
+        <div id="healthSection" class="hidden">
+          <h3>Health context <span class="sub">(Google Health, weekly)</span></h3>
+          <div class="scroll"><table id="healthTable"></table></div>
+          <p class="small muted" id="healthNote"></p>
+        </div>
+      </details>
       <p class="caveat" id="tddCaveat"></p>
     </section>
 
-    <section id="healthSection" class="hidden">
-      <h2>Health context <span class="sub">(Google Health, weekly)</span></h2>
-      <div class="scroll"><table id="healthTable"></table></div>
-      <p class="small muted" id="healthNote"></p>
+    <section id="dailyTddSection" class="rep hidden">
+      <h2>Daily total dose <span class="sub muted" id="dTddSub"></span></h2>
+      <p class="small muted">Bars: U per pump-local day, split basal / user bolus / automatic, total above each bar. Line: 7-day rolling mean over complete days. Faded with *: incomplete day (pump data missing or not matching), left out of the mean.</p>
+      <div class="scroll" id="dTddScroll"><div class="chartbox" id="dTdd"></div></div>
     </section>
     <p class="small muted" id="trendsEmpty" hidden>No weekly insulin or health data in this window.</p>
   </div>
@@ -688,26 +711,17 @@ function renderControlIq() {
 function renderTddTrend(r) {
   const weeks = r && !r.error ? r.weeks : [];
   $('tddSection').classList.toggle('hidden', !weeks.length);
+  $('tddCaveat').textContent = '';
   if (!weeks.length) return;
   const t = r.trend;
   $('tddSummary').textContent = t.slopeUnitsPerWeek != null
     ? `Weekly mean TDD changes ${t.slopeUnitsPerWeek >= 0 ? '+' : ''}${num(t.slopeUnitsPerWeek, 2)} U per week (slope over ${t.includedWeeks} of ${t.weeksInWindow} week(s); confidence: ${t.confidence}).`
     : `Only ${t.includedWeeks} of ${t.weeksInWindow} week(s) have 5 or more complete days, so no trend line.`;
-  const W = 400, H = 140, pad = 20, bw = (W - pad) / weeks.length;
-  const max = Math.max(1, ...weeks.map((w) => w.meanTdd || 0)) * 1.1;
-  const y = (v) => H - pad - (v / max) * (H - 2 * pad);
-  const bars = weeks.map((w, i) => w.meanTdd == null ? '' :
-    `<rect x="${pad + i * bw + bw * 0.15}" y="${y(w.meanTdd)}" width="${bw * 0.7}" height="${H - pad - y(w.meanTdd)}" fill="var(--accent)" opacity="${w.included ? 1 : 0.3}"><title>${esc(w.week)}: ${num(w.meanTdd, 1)} U/day, ${w.completeDays} complete day(s)</title></rect>`).join('');
-  const line = weeks.map((w, i) => (w.rolling4WeekMeanTdd ? `${pad + (i + 0.5) * bw},${y(w.rolling4WeekMeanTdd.value)}` : null)).filter(Boolean).join(' ');
-  const labelEvery = Math.ceil(weeks.length / 5);
-  const labels = weeks.map((w, i) => (i % labelEvery ? '' : `<text x="${pad + (i + 0.5) * bw}" y="${H - 4}" text-anchor="middle" font-size="12" fill="var(--muted)">${esc(w.week.slice(5))}</text>`)).join('');
-  $('tddChart').setAttribute('viewBox', `0 0 ${W} ${H}`);
-  $('tddChart').innerHTML = `<text x="0" y="12" font-size="12" fill="var(--muted)">${num(max, 0)} U</text><line x1="${pad}" x2="${W}" y1="${H - pad}" y2="${H - pad}" stroke="var(--line)"/>${bars}${line ? `<polyline points="${line}" fill="none" stroke="var(--high)" stroke-width="2"/>` : ''}${labels}`;
   const chg = (c) => (c ? `${c.units >= 0 ? '+' : ''}${num(c.units, 1)} (${c.percent >= 0 ? '+' : ''}${num(c.percent, 0)} %)` : '—');
   const p = (w) => w.proxies || {};
   $('tddTable').innerHTML = `<tr><th>Week of</th><th>Days</th><th>TDD</th><th>Δ vs prev</th><th>4-wk mean</th><th>Basal</th><th>Bolus</th><th>Auto corr.</th><th>Basal %</th><th>U/kg</th><th>U/g carbs</th><th>Mean ${esc(config.unit)}</th><th>TIR %</th></tr>` +
     weeks.map((w) => `<tr${w.included ? '' : ' class="muted"'} title="${esc(w.excludedReason || '')}"><td>${esc(w.week)}</td><td>${w.completeDays}/${w.daysInWindow}${w.included ? '' : ' *'}</td><td>${num(w.meanTdd, 1)}</td><td>${chg(w.changeVsPreviousWeek)}</td><td>${num(w.rolling4WeekMeanTdd?.value, 1)}</td><td>${num(w.meanBasal, 1)}</td><td>${num(w.meanBolus, 1)}</td><td>${num(w.meanAutoCorrectionUnits, 1)}</td><td>${num(w.basalPercent, 0)}</td><td>${num(p(w).tddPerKg?.value, 2)}</td><td>${num(p(w).tddUnitsPerGramLoggedCarbs?.value, 2)}</td><td>${num(w.glucose?.mean)}</td><td>${num(w.glucose?.consensusBands?.inRange, 0)}</td></tr>`).join('');
-  $('tddCaveat').textContent = `* under 5 complete days, not in the trend. ${r.caveat}`;
+  $('tddCaveat').textContent = `Faded bars and * in the table: under 5 complete days, not in the trend. ${r.caveat}`;
 }
 
 function healthRows(h = report.health) {
@@ -998,6 +1012,7 @@ Apply the CAVEAT RULE to every point.
 
 const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const wkLabel = (ymd) => `${+ymd.slice(8)} ${MON[+ymd.slice(5, 7) - 1]}`;
 const dlong = (ymd) => { const d = new Date(ymd + 'T00:00:00Z'); return `${DOW[d.getUTCDay()]} ${d.getUTCDate()} ${MON[d.getUTCMonth()]}`; };
 // Consensus band of one reading in the page's unit, the same cut-offs the server bands with.
 function bandOf(v) {
@@ -1169,7 +1184,7 @@ async function load() {
     report = rep;
     const s = report.summary;
     if (s.error) throw new Error(s.error);
-    trends = wide ? { ...wide, widened: true } : { window: w, health: report.health, tddTrend: report.tddTrend, widened: false };
+    trends = wide ? { ...wide, widened: true } : { window: w, health: report.health, tddTrend: report.tddTrend, controlIq: report.controlIq, widened: false };
     document.body.classList.add('loaded');
     $('device').textContent = `${deviceLine(s.device || config.device)} · ${config.online ? 'synced from Glooko' : 'offline archive'} · archive ${day(config.archive.earliest)} to ${day(config.archive.latest)}`;
     renderGlucose(s); renderInsulin(s); renderModes(); renderControlIq(); renderTrends(); renderSettings(s);
@@ -1179,7 +1194,7 @@ async function load() {
     $('xEnd').value = w.end.slice(0, 16);
     markPreset();
     const partErrors = ['pumpModes', 'controlIq', 'tddTrend', 'health', 'agp'].filter((k) => report[k]?.error).map((k) => `${k}: ${report[k].error}`)
-      .concat(trends.widened ? ['tddTrend', 'health'].filter((k) => trends[k]?.error).map((k) => `trends ${k}: ${trends[k].error}`) : []);
+      .concat(trends.widened ? ['tddTrend', 'health', 'controlIq'].filter((k) => trends[k]?.error).map((k) => `trends ${k}: ${trends[k].error}`) : []);
     $('status').textContent = (s.note ? s.note + ' ' : '') + (partErrors.length ? `Partly loaded (${partErrors.join('; ')})` : `Loaded ${new Date().toLocaleTimeString()}.`);
   } catch (e) {
     $('status').innerHTML = `<span class="err">Error: ${esc(e.message)}</span>`;
@@ -1204,7 +1219,162 @@ function renderTrends() {
   $('trendsNote').textContent = `Weeks over ${days} days, ${day(t.window.start)} to ${addDays(t.window.end.slice(0, 10), -1)}${t.widened ? ': Trends opens at 90 days (or the whole archive) when the chosen range is under 28 days' : ''}.`;
   renderTddTrend(t.tddTrend);
   renderHealth(t.health);
-  $('trendsEmpty').hidden = !($('tddSection').classList.contains('hidden') && $('healthSection').classList.contains('hidden'));
+  weeks = weekRows();
+  $('weeklySection').classList.toggle('hidden', !weeks.length);
+  const ciq = t.controlIq;
+  tddDays = ciq && !ciq.error ? ciq.days.filter((d) => d.totalDailyDose != null) : [];
+  $('dailyTddSection').classList.toggle('hidden', !tddDays.length);
+  $('trendsEmpty').hidden = !!(weeks.length || tddDays.length);
+}
+
+// Daily TDD: the Control-IQ review's days, the same source as the Days header TDD.
+// Columns keep a readable minimum width, so a long range scrolls inside its box
+// (opened at the newest day) rather than squeezing the labels.
+let tddDays = [];
+const DTDD_COL = 24;
+function drawDailyTdd() {
+  if (!tddDays.length) return;
+  const box = $('dTddScroll'), n = tddDays.length, L = 34, R = 8;
+  const W = Math.max(widthOf(box), L + R + n * DTDD_COL), cw = (W - L - R) / n, x = (i) => L + i * cw;
+  const H = 190, top = 26, bh = H - top - 34, complete = tddDays.filter((d) => d.complete);
+  const max = Math.ceil(Math.max(1, ...tddDays.map((d) => Math.max(d.totalDailyDose, d.basalUnits + d.manualBolusUnits + d.autoBolus.units))) / 10) * 10;
+  const y = (v) => top + bh - (v / max) * bh;
+  let s = '';
+  for (const v of [0, max / 2, max]) s += `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)" opacity="0.6"/>` + T(L - 6, y(v) + 4, String(v), { anchor: 'end', size: 10 });
+  s += T(L - 6, 10, 'U', { anchor: 'end', size: 10 });
+  // 7-day rolling mean over the complete days among the 7 calendar days ending on
+  // each day; needs 4 complete days so one or two days do not pass for a week.
+  const byDate = new Map(complete.map((d) => [d.date, d.totalDailyDose]));
+  const roll = tddDays.map((d) => {
+    const v = [...Array(7)].map((_, k) => byDate.get(addDays(d.date, -k))).filter((u) => u != null);
+    return v.length >= 4 ? v.reduce((a, b) => a + b, 0) / v.length : null;
+  });
+  tddDays.forEach((d, i) => {
+    let y0 = 0;
+    s += `<g opacity="${d.complete ? 1 : 0.35}"><title>${esc(dlong(d.date))}: ${num(d.totalDailyDose)} U (basal ${num(d.basalUnits)}, user bolus ${num(d.manualBolusUnits)}, automatic ${num(d.autoBolus.units)})${d.complete ? '' : ` - incomplete: ${esc((d.incompleteReasons || []).join('; '))}`}</title>`;
+    for (const [v, c] of [[d.basalUnits, 'var(--insulin)'], [d.manualBolusUnits, 'var(--color-ink-2)'], [d.autoBolus.units, 'var(--color-accent)']]) {
+      if (v > 0) s += `<rect x="${x(i) + cw * 0.14}" y="${y(y0 + v)}" width="${cw * 0.72}" height="${y(y0) - y(y0 + v)}" fill="${c}"/>`;
+      y0 += v;
+    }
+    s += '</g>' + T(x(i) + cw / 2, y(Math.max(d.totalDailyDose, y0)) - 4, `${num(d.totalDailyDose, 0)}${d.complete ? '' : '*'}`, { anchor: 'middle', size: 10, fill: d.complete ? 'var(--color-ink-2)' : 'var(--muted)' });
+    const dt = new Date(d.date + 'T00:00:00Z');
+    if (dt.getUTCDay() === 1 || i === 0) s += T(x(i) + cw / 2, H - 16, wkLabel(d.date), { anchor: i === 0 ? 'start' : 'middle', size: 10 }) + `<line x1="${x(i)}" x2="${x(i)}" y1="${top}" y2="${y(0)}" stroke="var(--line)" opacity="0.5"/>`;
+    s += T(x(i) + cw / 2, H - 3, DOW[dt.getUTCDay()].slice(0, 1), { anchor: 'middle', size: 9.5 });
+  });
+  const line = roll.map((v, i) => (v == null ? null : `${x(i) + cw / 2},${y(v)}`));
+  // One polyline per run of days that have a mean, so gaps stay gaps.
+  let run = [];
+  for (const p of [...line, null]) { if (p) run.push(p); else { if (run.length > 1) s += `<polyline points="${run.join(' ')}" fill="none" stroke="var(--color-ink)" stroke-width="2"/>`; run = []; } }
+  $('dTdd').innerHTML = svgEl(W, H, s, `Daily total dose: ${tddDays.map((d) => `${d.date} ${num(d.totalDailyDose)} U${d.complete ? '' : ' (incomplete)'}`).join(', ')}`);
+  box.scrollLeft = box.scrollWidth;
+  const mean = complete.length ? complete.reduce((a, d) => a + d.totalDailyDose, 0) / complete.length : null;
+  $('dTddSub').textContent = `${n} day${n === 1 ? '' : 's'} · ${complete.length} complete${mean != null ? ` · mean ${num(mean)} U/day over complete days` : ''}`;
+}
+
+// G6: one row per Monday week from the TDD trend and the weekly health context,
+// which key weeks the same way; the health buckets carry the get_trend glucose row (CV).
+let weeks = [];
+function weekRows() {
+  const tw = trends.tddTrend && !trends.tddTrend.error ? trends.tddTrend.weeks : [];
+  const hb = trends.health && !trends.health.error ? trends.health.buckets || [] : [];
+  const by = new Map();
+  const row = (k) => by.get(k) || by.set(k, { week: k }).get(k);
+  for (const w of tw) row(w.week).tdd = w;
+  for (const b of hb) row(b.bucket).hb = b;
+  return [...by.values()].sort((a, b) => (a.week < b.week ? -1 : 1)).map((r) => {
+    const g = r.hb?.glucose, h = r.hb?.health, t = r.tdd;
+    return {
+      week: r.week,
+      bands: g?.cgmReadingCount ? g.consensusBands : t?.glucose?.cgmReadings ? t.glucose.consensusBands : null,
+      mean: g?.cgmReadingCount ? g.avg : t?.glucose?.mean ?? null,
+      cv: g?.cgmReadingCount ? g.coefficientOfVariation : null,
+      tdd: t?.meanTdd != null ? { total: t.meanTdd, basal: t.meanBasal, user: t.meanBolus - (t.meanAutoCorrectionUnits || 0), auto: t.meanAutoCorrectionUnits || 0, included: t.included, roll: t.rolling4WeekMeanTdd?.value } : null,
+      steps: h?.steps?.perDay ?? null,
+      sleepH: h?.sleep?.avgMinutesAsleep != null ? h.sleep.avgMinutesAsleep / 60 : null,
+    };
+  });
+}
+
+// Four charts on one x scale, every value printed (labels thin to every other week
+// when columns are narrow).
+function drawTrends() {
+  if (!weeks.length) return;
+  const el0 = $('wBands'), W = widthOf(el0), L = 40, R = 8, n = weeks.length, cw = (W - L - R) / n, x = (i) => L + i * cw;
+  const narrow = cw < 34, thin = (i) => narrow && (n - 1 - i) % 2; // keep the latest week labelled
+  const lab = (H) => weeks.map((w, i) => (thin(i) ? '' : T(x(i) + cw / 2, H - 2, wkLabel(w.week), { anchor: 'middle', size: 10 }))).join('');
+  const grid = (y, v, label = String(v)) => `<line x1="${L}" x2="${W - R}" y1="${y}" y2="${y}" stroke="var(--line)" opacity="0.6"/>` + T(L - 6, y + 4, label, { anchor: 'end', size: 10 });
+  $('wSub').textContent = `${n} week${n === 1 ? '' : 's'} · weeks start Monday`;
+
+  // Time in ranges
+  let H = 150, s = '';
+  weeks.forEach((w, i) => {
+    if (!w.bands) return;
+    s += `<g><title>Week of ${esc(w.week)}: in range ${num(w.bands.inRange)} %</title>${bandColumn(x(i) + cw * 0.15, 18, cw * 0.7, H - 38, w.bands)}</g>`;
+    s += T(x(i) + cw / 2, 13, num(w.bands.inRange, 0), { anchor: 'middle', size: 10.5, fill: w.bands.inRange >= 70 ? 'var(--color-ink)' : 'var(--high)' });
+  });
+  s += T(L - 6, 18 + (H - 38) / 2, 'TIR %', { anchor: 'end', size: 10 });
+  $('wBands').innerHTML = svgEl(W, H, s + lab(H), `Weekly time in ranges: ${weeks.filter((w) => w.bands).map((w) => `${w.week} ${num(w.bands.inRange, 0)} %`).join(', ')}`);
+
+  // Total daily dose
+  const hasTdd = weeks.some((w) => w.tdd);
+  $('wTddBlock').hidden = !hasTdd;
+  if (hasTdd) {
+    H = 180; s = '';
+    const max = Math.ceil(Math.max(1, ...weeks.map((w) => (w.tdd ? Math.max(w.tdd.total, w.tdd.roll || 0) : 0))) / 10) * 10;
+    const top = 26, bh = H - top - 22, y = (v) => top + bh - (v / max) * bh;
+    for (const v of [0, max / 2, max]) s += grid(y(v), v);
+    s += T(L - 6, 10, 'U/day', { anchor: 'end', size: 10 });
+    weeks.forEach((w, i) => {
+      if (!w.tdd) return;
+      let y0 = 0;
+      s += `<g opacity="${w.tdd.included ? 1 : 0.35}"><title>Week of ${esc(w.week)}: ${num(w.tdd.total)} U/day (basal ${num(w.tdd.basal)}, user bolus ${num(w.tdd.user)}, automatic ${num(w.tdd.auto)})</title>`;
+      for (const [v, c] of [[w.tdd.basal, 'var(--insulin)'], [w.tdd.user, 'var(--color-ink-2)'], [w.tdd.auto, 'var(--color-accent)']]) {
+        if (v > 0) s += `<rect x="${x(i) + cw * 0.18}" y="${y(y0 + v)}" width="${cw * 0.64}" height="${y(y0) - y(y0 + v)}" fill="${c}"/>`;
+        y0 += v;
+      }
+      s += '</g>' + T(x(i) + cw / 2, y(w.tdd.total) - 4, num(w.tdd.total, 0), { anchor: 'middle', size: 10, fill: 'var(--color-ink-2)' });
+    });
+    const line = weeks.map((w, i) => (w.tdd?.roll ? `${x(i) + cw / 2},${y(w.tdd.roll)}` : null)).filter(Boolean);
+    if (line.length > 1) s += `<polyline points="${line.join(' ')}" fill="none" stroke="var(--color-ink)" stroke-width="2"/>`;
+    $('wTdd').innerHTML = svgEl(W, H, s + lab(H), `Weekly mean total daily dose: ${weeks.filter((w) => w.tdd).map((w) => `${w.week} ${num(w.tdd.total)} U/day`).join(', ')}`);
+  }
+
+  // Mean glucose with CV labels
+  H = 130; s = '';
+  const means = weeks.map((w) => w.mean).filter((v) => v != null), mg = isMgdl(), step = mg ? 20 : 1;
+  if (means.length) {
+    const lo = Math.floor(Math.min(...means) / step - 1) * step, hi = Math.ceil(Math.max(...means) / step + 1) * step;
+    const top = 22, gh = H - top - 22, ym = (v) => top + (1 - (v - lo) / (hi - lo)) * gh;
+    for (const v of [lo, (lo + hi) / 2, hi]) s += grid(ym(v), v, String(v));
+    s += T(L - 6, 10, config.unit, { anchor: 'end', size: 10 });
+    const pts = weeks.map((w, i) => (w.mean != null ? [x(i) + cw / 2, ym(w.mean)] : null));
+    s += `<polyline points="${pts.filter(Boolean).join(' ')}" fill="none" stroke="var(--color-ink)" stroke-width="2"/>`;
+    weeks.forEach((w, i) => {
+      if (!pts[i]) return;
+      s += `<circle cx="${pts[i][0]}" cy="${pts[i][1]}" r="3" fill="var(--color-ink)"><title>Week of ${esc(w.week)}: mean ${num(w.mean)} ${esc(config.unit)}, CV ${num(w.cv)} %</title></circle>`;
+      if (w.cv != null && !thin(i)) s += T(pts[i][0], pts[i][1] - 8, `${num(w.cv, 0)}%`, { anchor: 'middle', size: 10, fill: w.cv > 36 ? 'var(--high)' : 'var(--color-ink-2)' });
+    });
+  }
+  $('wMean').innerHTML = svgEl(W, H, s + lab(H), `Weekly mean glucose and CV: ${weeks.filter((w) => w.mean != null).map((w) => `${w.week} ${num(w.mean)} ${config.unit}${w.cv != null ? `, CV ${num(w.cv, 0)} %` : ''}`).join('; ')}`);
+
+  // Steps and sleep
+  const hasHealth = weeks.some((w) => w.steps != null || w.sleepH != null);
+  $('wHealthBlock').hidden = !hasHealth;
+  if (hasHealth) {
+    H = 140; s = '';
+    const sm = Math.ceil(Math.max(1000, ...weeks.map((w) => w.steps || 0)) / 2000) * 2000, top = 22, bh = H - top - 46, ys = (v) => top + bh - (v / sm) * bh;
+    s += grid(ys(sm), sm, `${sm / 1000}k`) + grid(ys(0), 0) + T(L - 6, H - 18, 'sleep', { anchor: 'end', size: 10 });
+    weeks.forEach((w, i) => {
+      if (w.steps != null) {
+        s += `<rect x="${x(i) + cw * 0.25}" y="${ys(w.steps)}" width="${cw * 0.5}" height="${ys(0) - ys(w.steps)}" rx="2" fill="var(--g-accent)" opacity="0.85"><title>Week of ${esc(w.week)}: ${w.steps} steps a day</title></rect>`;
+        if (!thin(i)) s += T(x(i) + cw / 2, ys(w.steps) - 4, `${num(w.steps / 1000, w.steps < 9950 ? 1 : 0)}k`, { anchor: 'middle', size: 10, fill: 'var(--color-ink-2)' });
+      }
+      if (w.sleepH != null && !thin(i)) s += T(x(i) + cw / 2, H - 18, `${num(w.sleepH)}h`, { anchor: 'middle', size: 10, fill: 'var(--color-ink-2)' });
+    });
+    $('wHealth').innerHTML = svgEl(W, H, s + lab(H), `Weekly steps a day and sleep: ${weeks.map((w) => `${w.week} ${w.steps ?? '—'} steps, ${num(w.sleepH)} h sleep`).join('; ')}`);
+  }
+  $('wLegend').innerHTML = (hasTdd ? '<span><i style="background:var(--insulin)"></i>Basal</span><span><i style="background:var(--color-ink-2)"></i>User bolus</span><span><i style="background:var(--color-accent)"></i>Automatic corrections</span><span><i class="sw-line"></i>4-week TDD / mean glucose</span><span><i style="background:var(--color-ink-2);opacity:.35"></i>Under 5 complete days</span>' : '<span><i class="sw-line"></i>Mean glucose</span>') +
+    (hasHealth ? '<span><i style="background:var(--g-accent)"></i>Steps a day</span>' : '');
 }
 
 // --- tabs, range and freshness ------------------------------------------------
@@ -1227,6 +1397,7 @@ function drawCharts() {
   if (tab === 'overview') { drawStack(); drawAgp(true); drawStrip(); }
   if (tab === 'days') loadDays();
   if (tab === 'patterns') { drawAgp(false); drawHours(); }
+  if (tab === 'trends') { drawTrends(); drawDailyTdd(); }
 }
 
 function markPreset() {
