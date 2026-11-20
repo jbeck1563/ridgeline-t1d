@@ -39,6 +39,7 @@ import { fetchGlookoRange } from './glooko.js';
 import { ensureFreshOnFirstCall, runTopUp, isSyncing } from './sync.js';
 import { initDb, getEarliestCgmEpoch, getLatestCgmEpoch, getCgmCount, getMeta, savePumpSettings } from './store.js';
 import { parseTandemSettings } from './tandem-settings.js';
+import { whatStandsOut } from './analytics.js';
 
 const PORT = parseInt(process.env.OMNI_HTTP_PORT || '3000', 10);
 const HOST = process.env.OMNI_HTTP_HOST || '127.0.0.1';
@@ -460,6 +461,7 @@ async function handleWeb(req, res, url) {
         agp,
         hourly,
         daily,
+        standouts: whatStandsOut({ agp, hourly, controlIq }), // T9, Patterns tab
         previous: prev.error
           ? { window: pw, error: prev.error }
           : { window: pw, days: prev.reportRange?.days ?? 0, cgmReadingCount: prev.glucoseControl?.cgmReadingCount ?? 0, consensusBands: prev.glucoseControl?.consensusBands ?? null },

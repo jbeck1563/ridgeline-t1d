@@ -158,6 +158,10 @@
   .uploads button.on { border-color: var(--color-accent); box-shadow: inset 0 0 0 1px var(--color-accent); }
   ul.small { padding-left: var(--space-lg); overflow-wrap: anywhere; }
   ul.changes li + li { margin-top: var(--space-2xs); }
+  .obs { margin: 0; padding: 0; list-style: none; display: grid; gap: var(--space-sm); }
+  .obs li { padding: var(--space-sm) var(--space-md); background: var(--color-paper-2); border-radius: var(--radius-input); border-left: 3px solid var(--color-accent); font-size: var(--text-sm); }
+  .obs li b { color: var(--color-ink); font-weight: 500; }
+  .obs .n { display: block; margin-top: 2px; color: var(--color-muted); font-size: var(--text-xs); }
   /* Tabs, range and freshness bar (step 3 of the interface exploration). */
   :root { --sleep: oklch(68% 0.08 255); --exercise: oklch(72% 0.11 312); --manual: oklch(60% 0.01 160); --mode-auto: var(--color-paper-2); }
   :root[data-theme="white"] { --sleep: oklch(55% 0.09 255); --exercise: oklch(52% 0.13 312); --manual: oklch(58% 0.01 160); --mode-auto: oklch(90% 0.012 160); }
@@ -285,6 +289,11 @@
       </div>
     </section>
 
+    <section class="rep" id="obsSection">
+      <h2>What stands out <span class="sub muted">descriptive only, each with the evidence behind it · pump clock</span></h2>
+      <ul class="obs" id="obs"></ul>
+      <p class="caveat" id="obsCaveat"></p>
+    </section>
   </div>
 
   <div class="panel" id="tab-days" hidden>
@@ -482,11 +491,7 @@ function renderGlucose(s) {
     ['', 'CGM active', `${num(g.cgmActivePercent)}<small>%</small>`, [`70 % of 14 days needed for a valid report · ${chip(g.cgmActivePercent >= 70, 'enough', 'too little')}`]],
   ].map(([cls, k, v, lines]) => `<div class="tile${cls ? ' ' + cls : ''}"><span>${esc(k)}</span><b>${v}</b>${lines.map((l) => `<span class="t">${l}</span>`).join('')}</div>`).join('');
   drawStack();
-  const bw = s.bestWorst || {};
-  const fmt = (x, key) => (x ? `${x[key]} — TIR ${num(x.tir)} %, CV ${num(x.cv)} %` : null);
   $('bestWorst').innerHTML = dl([
-    ['Best day', fmt(bw.bestDay, 'day')], ['Worst day', fmt(bw.worstDay, 'day')],
-    ['Best hour', fmt(bw.bestHour, 'hour')], ['Worst hour', fmt(bw.worstHour, 'hour')],
     ['Highest', s.glucoseExtremes?.highest ? `${s.glucoseExtremes.highest.value} ${u} (${s.glucoseExtremes.highest.count}×)` : null],
     ['Lowest', s.glucoseExtremes?.lowest ? `${s.glucoseExtremes.lowest.value} ${u} (${s.glucoseExtremes.lowest.count}×)` : null],
   ]);
@@ -708,6 +713,18 @@ function renderModes() {
   const sw = (k) => `<i class="sw" style="background:${MODE_COLORS[k] || 'var(--muted)'}"></i>`;
   $('modes').innerHTML = rows.map(([k, v]) => `<dt>${mr.exclusive ? sw(k) : ''}${esc(k)}</dt><dd>${num(v)} %</dd>`).join('') +
     `<dt></dt><dd class="small muted">${mr.exclusive ? `Mean over ${report.controlIq.summary.completeDays} complete day(s).` : 'Share of the window; modes can overlap.'}</dd>`;
+}
+
+// T9: the server's "What stands out" list; the page only formats it.
+function renderStandouts() {
+  const so = report.standouts, items = so?.items || [];
+  $('obsSection').hidden = !items.length;
+  const plural = (n, w) => `${n.toLocaleString('en')} ${w}${n === 1 ? '' : 's'}`;
+  $('obs').innerHTML = items.map((x) => {
+    const n = [x.days != null && plural(x.days, 'day'), x.readings != null && plural(x.readings, 'reading'), x.events != null && plural(x.events, 'automatic correction')].filter(Boolean).join(' · ');
+    return `<li><b>${esc(x.title)}</b>: ${esc(x.detail)}<span class="n">${esc(n)}</span></li>`;
+  }).join('');
+  $('obsCaveat').textContent = so?.caveat || '';
 }
 
 function renderControlIq() {
@@ -1227,7 +1244,7 @@ async function load() {
     trends = wide ? { ...wide, widened: true } : { window: w, health: report.health, tddTrend: report.tddTrend, controlIq: report.controlIq, widened: false };
     document.body.classList.add('loaded');
     $('device').textContent = `${deviceLine(s.device || config.device)} · ${config.online ? 'synced from Glooko' : 'offline archive'} · archive ${day(config.archive.earliest)} to ${day(config.archive.latest)}`;
-    renderGlucose(s); renderInsulin(s); renderModes(); renderControlIq(); renderTrends(); renderSettings(s);
+    renderGlucose(s); renderInsulin(s); renderModes(); renderControlIq(); renderStandouts(); renderTrends(); renderSettings(s);
     drawCharts();
     $('prompt').textContent = buildPrompt();
     $('xStart').value = w.start.slice(0, 16);

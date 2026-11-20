@@ -417,8 +417,9 @@ server.registerTool(
       'hour to their local time and label it.\n\n' +
       'Returns: a byHour array of up to 24 rows, each with hour (UTC, "HH:00"), ' +
       'averageBG, timeInRange, timeLow, timeHigh, veryLow, veryHigh, ' +
-      'consensusBands (five fixed consensus bands) and the reading count for that ' +
-      'hour. Glucose values are in the configured unit.',
+      'consensusBands (five fixed consensus bands), the reading count for that ' +
+      'hour and days (days with a reading in that hour). Glucose values are in ' +
+      'the configured unit.',
     inputSchema: {
       start: z.string().describe(startDesc),
       end: z.string().describe(endDesc),

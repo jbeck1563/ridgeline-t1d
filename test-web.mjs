@@ -117,6 +117,23 @@ if (NOBASIC) {
   const wk = rep.health.buckets.find((b) => b.health);
   assert.deepStrictEqual(wk.health.steps, { total: 20000, perDay: 10000, days: 2 });
 
+  // 4e. What stands out (T9): server-computed, each item with its days and readings or corrections.
+  assert.deepStrictEqual(rep.standouts.items.map((x) => [x.kind, x.title, x.detail, x.days, x.readings, x.events]), [
+    ['highestMedian', 'Highest median at 14:00', '9.6 mmol/L; a quarter of readings around then are above 10.8.', 2, 6, null],
+    ['noneBelow', 'No time below range in any hour', 'No reading under 3.9 mmol/L in this window.', 2, 576, null],
+    ['mostAbove', 'Most time above range at 04:00', "50 % of that hour's readings are over 10.0 mmol/L.", 2, 24, null],
+    ['mostCorrections', 'Control-IQ corrects most often at 03:00', 'Automatic corrections in that hour on 1 of 2 complete days, 1 in all (1.25 U).', 2, null, 1],
+  ]);
+  assert.match(rep.standouts.caveat, /^Descriptive only\..*Discuss with your endocrinologist before changing settings/);
+  assert.strictEqual(rep.hourly.byHour[0].days, 2);
+  // Pure: errored parts are skipped; time below range names the hour and the very-low share (mg/dL).
+  const { whatStandsOut } = await import('./src/analytics.js');
+  const band = (low, veryLow) => ({ veryLow, low, inRange: 100 - low - veryLow, high: 0, veryHigh: 0 });
+  const mgRows = [{ hourNum: 2, readings: 36, days: 3, consensusBands: band(10, 5) }, { hourNum: 5, readings: 36, days: 3, consensusBands: band(15, 0) }];
+  assert.deepStrictEqual(whatStandsOut({ agp: { error: 'x' }, hourly: { unit: 'mg/dL', byHour: mgRows }, controlIq: { error: 'y' } }).items, [
+    { kind: 'mostBelow', title: 'Most time below range at 02:00', detail: "15 % of that hour's readings are under 70 mg/dL, 5 % under 54.", days: 3, readings: 36, events: null },
+  ]);
+  assert.deepStrictEqual(whatStandsOut({}).items, []);
   // 4a. Previous window of equal length (T4): before the archive it is empty, and a
   // one-day window's previous day carries that day's own bands.
   assert.deepStrictEqual([rep.previous.window, rep.previous.cgmReadingCount], [{ start: '2001-03-08T00:00:00.000Z', end: '2001-03-09T23:59:59.999Z' }, 0]);
