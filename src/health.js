@@ -296,7 +296,7 @@ let checkedThisProcess = false;
  * Bring the health tables up to now (and back to reqStartEpoch if the request
  * reaches before what has been pulled). Never throws: returns a status object.
  */
-export function ensureHealthFresh(reqStartEpoch) {
+export function ensureHealthFresh(reqStartEpoch, { force = false } = {}) {
   if (!healthConfigured()) {
     return Promise.resolve({
       ok: false,
@@ -304,7 +304,8 @@ export function ensureHealthFresh(reqStartEpoch) {
       hint: 'Google Health is not configured (OMNI_GHEALTH_* unset); showing stored health data only.',
     });
   }
-  if (inFlight) return inFlight;
+  // A forced call queues behind a run already in flight: that run may have skipped the top-up.
+  if (inFlight) return force ? inFlight.then(() => ensureHealthFresh(reqStartEpoch, { force })) : inFlight;
   inFlight = (async () => {
     const now = Math.floor(Date.now() / 1000);
     const syncedTo = num(getMeta('healthSyncedTo'));
@@ -313,7 +314,7 @@ export function ensureHealthFresh(reqStartEpoch) {
     if (syncedTo == null) {
       jobs.push([Math.min(reqStartEpoch, resolveOldestEpoch()), now, 'full']);
     } else {
-      if (!checkedThisProcess || now - syncedTo > HEALTH_STALE_SECONDS) {
+      if (force || !checkedThisProcess || now - syncedTo > HEALTH_STALE_SECONDS) {
         jobs.push([Math.max(0, syncedTo - TRAILING_SECONDS), now, 'top-up']);
       }
       if (floor != null && reqStartEpoch < floor) jobs.push([reqStartEpoch, floor, 'backfill']);
@@ -345,6 +346,9 @@ export function ensureHealthFresh(reqStartEpoch) {
   });
   return inFlight;
 }
+
+/** Top up health data to now regardless of the staleness check (the page's Refresh button). */
+export const forceHealthTopUp = () => ensureHealthFresh(Math.floor(Date.now() / 1000), { force: true });
 
 // --- bucketing (pure) -------------------------------------------------------
 
