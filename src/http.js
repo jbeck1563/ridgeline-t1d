@@ -341,7 +341,7 @@ async function daysPayload(w) {
 // The t:connect settings text is ~3 KB; anything near this cap is not a paste.
 const PASTE_MAX_BYTES = 64 * 1024;
 
-// POST /api/pump-settings — { text } -> { saved, snapshot, uploads }. Parses the
+// POST /api/pump-settings — { text } -> { saved, snapshot, uploads, changes }. Parses the
 // pasted t:connect settings and stores them; the same upload twice is a no-op.
 async function importPumpSettings(req, res) {
   let text;
@@ -360,8 +360,8 @@ async function importPumpSettings(req, res) {
     return badRequest(res, err.message);
   }
   const saved = savePumpSettings(snapshot);
-  const { uploads } = await callTool('get_pump_settings', {});
-  return sendJson(res, 200, { saved, snapshot, uploads });
+  const { uploads, changes } = await callTool('get_pump_settings', { at: snapshot.uploadDate });
+  return sendJson(res, 200, { saved, snapshot, uploads, changes });
 }
 
 // POST /api/refresh — runs the same locked Glooko top-up the MCP server uses and

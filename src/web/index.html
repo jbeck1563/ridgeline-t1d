@@ -157,6 +157,7 @@
   .uploads button { font-family: var(--font-outlier); font-size: var(--text-sm); }
   .uploads button.on { border-color: var(--color-accent); box-shadow: inset 0 0 0 1px var(--color-accent); }
   ul.small { padding-left: var(--space-lg); overflow-wrap: anywhere; }
+  ul.changes li + li { margin-top: var(--space-2xs); }
   /* Tabs, range and freshness bar (step 3 of the interface exploration). */
   :root { --sleep: oklch(68% 0.08 255); --exercise: oklch(72% 0.11 312); --manual: oklch(60% 0.01 160); --mode-auto: var(--color-paper-2); }
   :root[data-theme="white"] { --sleep: oklch(55% 0.09 255); --exercise: oklch(52% 0.13 312); --manual: oklch(58% 0.01 160); --mode-auto: oklch(90% 0.012 160); }
@@ -345,18 +346,23 @@
 
   <div class="panel" id="tab-settings" hidden>
     <section id="pumpSection">
-      <h2>Pump settings <span class="sub">(pasted from t:connect)</span></h2>
+      <h2>Pump settings <span class="sub muted">pasted from t:connect · the settings as programmed on the pump</span></h2>
+      <h3>Stored uploads <span class="sub muted">upload time, pump clock</span></h3>
+      <ul class="uploads" id="uploads"></ul>
+      <div id="pumpView"></div>
+      <div id="pumpChangesBlock" hidden>
+        <h3>Changed since the previous upload <span class="sub muted" id="pumpChangesSub"></span></h3>
+        <ul class="small changes" id="pumpChanges"></ul>
+      </div>
+      <h3>Import a new snapshot</h3>
       <p class="small muted">Glooko does not receive Tandem profile settings. On the t:connect web pump settings view, copy all of the text and paste it here. Your name, date of birth, pump serial number and CGM transmitter ID are dropped before anything is stored.</p>
       <textarea id="paste" rows="7" placeholder="Paste the copied pump settings text here" aria-label="Copied pump settings text"></textarea>
       <div class="row"><button class="primary" id="import">Import</button></div>
       <p id="pumpStatus" class="small muted"></p>
-      <h3>Stored uploads <span class="sub muted">upload time, pump clock</span></h3>
-      <ul class="uploads" id="uploads"></ul>
-      <div id="pumpView"></div>
     </section>
 
     <section class="rep">
-      <h2>Settings in force <span class="sub muted" id="settingsSub"></span></h2>
+      <h2>Glooko settings in force <span class="sub muted" id="settingsSub"></span></h2>
       <div id="settings"></div>
     </section>
   </div>
@@ -774,7 +780,7 @@ function settingsBlocks(s, u) {
 
 function renderSettings(s) {
   const blocks = settingsBlocks(s, config.unit);
-  $('settingsSub').textContent = `From Glooko for ${day(s.reportRange?.start)} to ${day(s.reportRange?.end)}${blocks.length ? `, last effective ${blocks.at(-1).effective} (pump clock)` : ''}. Tandem pumps usually do not send settings to Glooko, so the pasted snapshot above is the one to trust.`;
+  $('settingsSub').textContent = `Source: Glooko, for ${day(s.reportRange?.start)} to ${day(s.reportRange?.end)}${blocks.length ? `, last effective ${blocks.at(-1).effective} (pump clock)` : ', none in this window'}. Tandem pumps usually do not send settings to Glooko, so the pasted snapshot above is the one to trust.`;
   $('settings').innerHTML = blocks.length
     ? blocks.map((b) => `<h3>Effective ${esc(b.effective)}</h3><dl>${dl(b.rows)}</dl>`).join('')
     : `<p class="muted">${esc(s.settingsNote || 'No pump settings stored for this window.')}</p>`;
@@ -801,7 +807,25 @@ function profileTable(p, u) {
     ])}</dl>`;
 }
 
-function renderPumpSettings(snap, uploads) {
+// Server-computed diff against the upload before the one shown (get_pump_settings changes).
+function renderPumpChanges(snap, changes) {
+  $('pumpChangesBlock').hidden = !snap;
+  if (!snap) return;
+  const at = (x) => esc(x.replace('T', ' '));
+  if (!changes) {
+    $('pumpChangesSub').textContent = 'first stored upload';
+    $('pumpChanges').innerHTML = '<li class="muted">Nothing to compare with yet.</li>';
+    return;
+  }
+  $('pumpChangesSub').innerHTML = `against ${at(changes.previousUpload)} (pump clock)`;
+  const v = (x) => (x == null ? '<span class="muted">not set</span>' : esc(x));
+  $('pumpChanges').innerHTML = changes.items.length
+    ? changes.items.map((c) => (c.item === 'Profile' ? `<li><b>${esc(c.section)}</b>: profile ${c.after ? 'added' : 'removed'}</li>` : `<li><b>${esc(c.section)} · ${esc(c.item)}</b>: ${v(c.before)} → ${v(c.after)}</li>`)).join('')
+    : '<li class="muted">No setting changed.</li>';
+}
+
+function renderPumpSettings(snap, uploads, changes) {
+  renderPumpChanges(snap, changes);
   $('uploads').innerHTML = uploads.length
     ? uploads.map((u) => `<li><button data-upload="${esc(u)}" class="${snap?.uploadDate === u ? 'on' : ''}">${esc(u.replace('T', ' '))}</button></li>`).join('')
     : '<li class="small muted">None yet.</li>';
@@ -834,7 +858,7 @@ function renderPumpSettings(snap, uploads) {
 async function loadPumpSettings(at) {
   try {
     const r = await getJson('/api/pump-settings' + (at ? `?at=${encodeURIComponent(at)}` : ''));
-    renderPumpSettings(r.snapshot, r.uploads);
+    renderPumpSettings(r.snapshot, r.uploads, r.changes);
   } catch (e) {
     $('pumpStatus').innerHTML = `<span class="err">Error: ${esc(e.message)}</span>`;
   }
@@ -855,7 +879,7 @@ async function importPaste() {
     const n = body.snapshot.profiles.length;
     $('pumpStatus').textContent = `${body.saved ? 'Saved' : 'Already stored, nothing changed'}: upload ${body.snapshot.uploadDate.replace('T', ' ')}, ${n} profile${n === 1 ? '' : 's'}, ${body.snapshot.warnings.length} line(s) not understood.`;
     $('paste').value = '';
-    renderPumpSettings(body.snapshot, body.uploads);
+    renderPumpSettings(body.snapshot, body.uploads, body.changes);
   } catch (e) {
     $('pumpStatus').innerHTML = `<span class="err">Error: ${esc(e.message)}</span>`;
   } finally {

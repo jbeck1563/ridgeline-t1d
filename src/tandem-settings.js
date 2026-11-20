@@ -208,3 +208,69 @@ export function parseTandemSettings(text) {
   }
   return snap;
 }
+
+// --- changes between two stored snapshots -----------------------------------
+
+const label = (k) => k.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/^./, (c) => c.toUpperCase());
+const shown = (v) => (v == null ? null : typeof v === 'boolean' ? (v ? 'On' : 'Off') : String(v));
+const schedule = (list, f) => (list || []).map((x) => `${x.time} ${x[f]}`).join(', ') || null;
+const withUnit = (o) => (o?.value == null ? null : `${o.value}${o.unit ? ` ${o.unit}` : ''}`);
+const profileName = (p) => (/^\d+$/.test(p.name) ? `Profile ${p.name}` : p.name);
+
+// One snapshot as section -> item -> printable value, in page order.
+function flatten(s) {
+  const out = new Map();
+  const put = (section, item, v) => {
+    if (!out.has(section)) out.set(section, new Map());
+    out.get(section).set(item, shown(v));
+  };
+  if (s.pump) put('Pump', 'Firmware', s.pump.firmware);
+  for (const p of s.profiles || []) {
+    const sec = profileName(p);
+    put(sec, 'Active at upload', p.active ? 'Yes' : 'No');
+    put(sec, 'Basal rate (units/hr)', schedule(p.basal, 'unitsPerHour'));
+    put(sec, 'Correction factor (1 unit :)', schedule(p.correctionFactor, 'glucosePerUnit'));
+    put(sec, 'Carb ratio (1 unit : g)', schedule(p.carbRatio, 'gramsPerUnit'));
+    put(sec, 'Target BG', schedule(p.targetBg, 'value'));
+    put(sec, 'Total daily basal (units)', p.totalDailyBasal);
+    put(sec, 'Insulin duration (h)', p.insulinDurationHours);
+    put(sec, 'Carbohydrates', p.carbohydrates);
+  }
+  const c = s.controlIq;
+  if (c) {
+    put('Control-IQ', 'Control-IQ', c.enabled);
+    put('Control-IQ', 'Weight', withUnit(c.weight));
+    put('Control-IQ', 'Total daily insulin (units)', c.totalDailyInsulin);
+    for (const x of c.sleepSchedules || []) put('Control-IQ', `Sleep: ${x.name}`, `${x.start}–${x.end} ${x.enabled ? 'On' : 'Off'}`);
+    put('Control-IQ', 'Insulin duration (h)', c.insulinDurationHours);
+    put('Control-IQ', 'Target BG', withUnit(c.targetBg));
+  }
+  for (const [sec, name] of [['cgm', 'CGM'], ['general', 'General'], ['alerts', 'Alerts & reminders']]) {
+    for (const [k, v] of Object.entries(s[sec] || {})) put(name, label(k), v);
+  }
+  return out;
+}
+
+/**
+ * What changed from snapshot `before` to snapshot `after`: one item per setting
+ * whose printed value differs, as { section, item, before, after } (null = not
+ * there). A profile only one side has is one item, "Profile", present / null.
+ * Pure; values are compared as the pump printed them, nothing is converted.
+ */
+export function diffPumpSettings(before, after) {
+  const a = flatten(before), b = flatten(after);
+  const items = [];
+  const profiles = new Set([...(before.profiles || []), ...(after.profiles || [])].map(profileName));
+  for (const sec of new Set([...b.keys(), ...a.keys()])) {
+    const x = a.get(sec), y = b.get(sec);
+    if (profiles.has(sec) && (!x || !y)) {
+      items.push({ section: sec, item: 'Profile', before: x ? 'present' : null, after: y ? 'present' : null });
+      continue;
+    }
+    for (const item of new Set([...(y || new Map()).keys(), ...(x || new Map()).keys()])) {
+      const v0 = x?.get(item) ?? null, v1 = y?.get(item) ?? null;
+      if (v0 !== v1) items.push({ section: sec, item, before: v0, after: v1 });
+    }
+  }
+  return items;
+}
