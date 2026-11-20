@@ -461,9 +461,15 @@ function renderGlucose(s) {
   const u = config.unit;
   const tbr = b.low + b.veryLow, tar = b.high + b.veryHigh;
   $('tirSub').textContent = `${s.reportRange?.days ?? 0} days of data · ${(g.cgmReadingCount ?? 0).toLocaleString('en')} readings`;
+  // T4: change against the window of equal length just before this one.
+  const pv = report.previous, pb = pv && !pv.error && pv.cgmReadingCount ? pv.consensusBands : null;
+  const spanD = Math.round((Date.parse(report.window.end) - Date.parse(report.window.start)) / 864e5);
+  const vsPrev = (cur, prev) => (pb
+    ? `${cur - prev >= 0 ? '+' : ''}${num(cur - prev)} pts vs previous ${spanD} d${pv.days < spanD - 0.5 ? ` (${num(pv.days, 0)} d of data)` : ''}`
+    : `No previous ${spanD} d to compare`);
   $('glucoseTiles').innerHTML = [
-    ['lead', `Time in range · ${rangeOf('inRange')}`, `${num(b.inRange)}<small>%</small>`, [`Target over 70 % · ${chip(b.inRange > 70, 'met', 'below')}`]],
-    ['', `Below range · under ${isMgdl() ? 70 : 3.9}`, `${num(tbr)}<small>%</small>`, [`Target under 4 % · ${chip(tbr < 4, 'met', 'over')}`, `${num(tbr * 14.4, 0)} min a day`, `Very low ${num(b.veryLow)} % · under 1 % ${chip(b.veryLow < 1, 'met', 'over')}`]],
+    ['lead', `Time in range · ${rangeOf('inRange')}`, `${num(b.inRange)}<small>%</small>`, [`Target over 70 % · ${chip(b.inRange > 70, 'met', 'below')}`, esc(vsPrev(b.inRange, pb?.inRange))]],
+    ['', `Below range · under ${isMgdl() ? 70 : 3.9}`, `${num(tbr)}<small>%</small>`, [`Target under 4 % · ${chip(tbr < 4, 'met', 'over')}`, esc(vsPrev(tbr, pb && pb.low + pb.veryLow)), `${num(tbr * 14.4, 0)} min a day`, `Very low ${num(b.veryLow)} % · under 1 % ${chip(b.veryLow < 1, 'met', 'over')}`]],
     ['', `Above range · over ${isMgdl() ? 180 : '10.0'}`, `${num(tar)}<small>%</small>`, [`Target under 25 % · ${chip(tar < 25, 'met', 'over')}`, `Very high ${num(b.veryHigh)} % · under 5 % ${chip(b.veryHigh < 5, 'met', 'over')}`]],
     ['', 'GMI (estimated A1c)', `${num(g.gmiEstimatedA1c)}<small>%</small>`, [`Usual target under 7 % · ${chip(g.gmiEstimatedA1c < 7, 'met', 'over')}`, 'Targets are set per person', `Mean ${num(g.averageBG)} ${esc(u)}, SD ${num(g.stdDev)}`]],
     ['', 'Variability (CV)', `${num(g.coefficientOfVariation)}<small>%</small>`, [`Target 36 % or less · ${chip(g.coefficientOfVariation <= 36, 'met', 'over')}`]],

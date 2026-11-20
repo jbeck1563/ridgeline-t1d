@@ -117,6 +117,15 @@ if (NOBASIC) {
   const wk = rep.health.buckets.find((b) => b.health);
   assert.deepStrictEqual(wk.health.steps, { total: 20000, perDay: 10000, days: 2 });
 
+  // 4a. Previous window of equal length (T4): before the archive it is empty, and a
+  // one-day window's previous day carries that day's own bands.
+  assert.deepStrictEqual([rep.previous.window, rep.previous.cgmReadingCount], [{ start: '2001-03-08T00:00:00.000Z', end: '2001-03-09T23:59:59.999Z' }, 0]);
+  const rep11 = await json('/api/report?start=2001-03-11T00:00:00.000Z&end=2001-03-12T00:00:00.000Z');
+  assert.deepStrictEqual(rep11.previous.window, { start: '2001-03-10T00:00:00.000Z', end: '2001-03-10T23:59:59.999Z' });
+  assert.strictEqual(rep11.previous.cgmReadingCount, 288);
+  assert.deepStrictEqual(rep11.previous.consensusBands, rep.daily.buckets[0].glucose.consensusBands);
+  assert.strictEqual(rep11.previous.consensusBands.inRange, 48.26);
+
   // 4b. Trends: the weekly parts and the per-day Control-IQ review (daily TDD chart),
   // for the Trends tab's own (wider) window.
   const tr = await json(`/api/trends?start=2001-02-10T00:00:00.000Z&end=2001-03-12T00:00:00.000Z`);

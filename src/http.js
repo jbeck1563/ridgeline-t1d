@@ -436,7 +436,11 @@ async function handleWeb(req, res, url) {
       // others intact and comes back as { error }. The summary runs first so any
       // Glooko top-up for the window happens once, before the others read it.
       const summary = await callTool('get_diabetes_summary', w);
-      const [basal, controlIq, health, tddTrend, agp, hourly, daily] = await Promise.all([
+      // T4: the window of equal length just before this one, for "vs previous n d".
+      // The summary's end is inclusive, so it stops 1 ms short of this window's start.
+      const span = Date.parse(w.end) - Date.parse(w.start);
+      const pw = Number.isFinite(span) && span > 0 ? { start: new Date(Date.parse(w.start) - span).toISOString(), end: new Date(Date.parse(w.start) - 1).toISOString() } : null;
+      const [basal, controlIq, health, tddTrend, agp, hourly, daily, prev] = await Promise.all([
         callTool('get_basal_delivery', { ...w, includeIntervals: false }),
         callTool('get_controliq_review', w),
         callTool('get_health_context', { ...w, granularity: 'week' }),
@@ -444,6 +448,7 @@ async function handleWeb(req, res, url) {
         callTool('get_agp', w),
         callTool('get_hourly_trends', w),
         callTool('get_trend', { ...w, granularity: 'day' }), // Overview's days strip
+        pw ? callTool('get_diabetes_summary', pw) : { error: 'end must be after start' },
       ]);
       return sendJson(res, 200, {
         window: w,
@@ -455,6 +460,9 @@ async function handleWeb(req, res, url) {
         agp,
         hourly,
         daily,
+        previous: prev.error
+          ? { window: pw, error: prev.error }
+          : { window: pw, days: prev.reportRange?.days ?? 0, cgmReadingCount: prev.glucoseControl?.cgmReadingCount ?? 0, consensusBands: prev.glucoseControl?.consensusBands ?? null },
       });
     }
 
