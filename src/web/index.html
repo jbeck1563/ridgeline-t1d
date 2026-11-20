@@ -314,7 +314,7 @@
         <p class="small" id="tddSummary"></p>
         <div class="chartbox" id="wTdd"></div>
       </div>
-      <h3>Mean glucose and variability <span class="sub muted">labels: CV</span></h3>
+      <h3>Mean glucose and variability <span class="sub muted">above each point: CV · below: weekly mean</span></h3>
       <div class="chartbox" id="wMean"></div>
       <div id="wHealthBlock">
         <h3>Activity and sleep <span class="sub muted">Google Health · steps a day above, sleep under each week</span></h3>
@@ -1091,7 +1091,7 @@ function renderDays() {
   $('daysList').innerHTML = days.map((d, i) => {
     const b = d.bands;
     const tdd = d.tdd == null ? 'TDD —' : `TDD ${num(d.tdd)} U${d.tddComplete ? '' : ' (partial)'}`;
-    const facts = [b ? `TIR ${num(b.inRange, 0)} %` : 'no CGM', tdd, `${d.carbsGrams} g carbs`, d.autoCorrections ? `${d.autoCorrections.count} auto` : null].filter(Boolean).join(' · ');
+    const facts = [b ? `TIR ${num(b.inRange, 0)} %` : 'no CGM', tdd, `${d.carbsGrams} g carbs`, d.autoCorrections?.count ? `${d.autoCorrections.count} auto, ${num(d.autoCorrections.units, 2)} U` : null].filter(Boolean).join(' · ');
     const tags = [...new Set(d.events.map((e) => kindTag[e.kind]))].concat(d.modes.some((m) => m.mode === 'manual') ? ['manual mode'] : []).map((t) => `<span class="tag2">${t}</span>`).join(' ');
     return `<article class="day" id="day-${d.date}"><div class="dayhead"><h3>${dlong(d.date)}</h3>${b ? bandBar(b) : ''}<span class="facts">${facts}</span>${tags}</div><div class="chartbox" data-i="${i}"></div></article>`;
   }).join('');
@@ -1358,6 +1358,7 @@ function drawTrends() {
       if (!pts[i]) return;
       s += `<circle cx="${pts[i][0]}" cy="${pts[i][1]}" r="3" fill="var(--color-ink)"><title>Week of ${esc(w.week)}: mean ${num(w.mean)} ${esc(config.unit)}, CV ${num(w.cv)} %</title></circle>`;
       if (w.cv != null && !thin(i)) s += T(pts[i][0], pts[i][1] - 8, `${num(w.cv, 0)}%`, { anchor: 'middle', size: 10, fill: w.cv > 36 ? 'var(--high)' : 'var(--color-ink-2)' });
+      if (!thin(i)) s += T(pts[i][0], pts[i][1] + 14, num(w.mean, mg ? 0 : 1), { anchor: 'middle', size: 10, fill: 'var(--color-ink)' });
     });
   }
   $('wMean').innerHTML = svgEl(W, H, s + lab(H), `Weekly mean glucose and CV: ${weeks.filter((w) => w.mean != null).map((w) => `${w.week} ${num(w.mean)} ${config.unit}${w.cv != null ? `, CV ${num(w.cv, 0)} %` : ''}`).join('; ')}`);
