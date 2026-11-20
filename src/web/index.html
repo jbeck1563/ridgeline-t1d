@@ -272,12 +272,12 @@
       <div class="chartbox" id="agp"></div>
       <p class="legend" id="agpLegend"></p>
       <div id="hourCharts">
-        <h3>Time in ranges by hour <span class="sub muted">share of each hour's readings · number: % in range 3.9–10.0</span></h3>
+        <h3>Time in ranges by hour <span class="sub muted">pump clock · share of each hour's readings · number: % in range 3.9–10.0</span></h3>
         <div class="chartbox" id="hourBands"></div>
         <div id="hourCiq">
           <h3>Control-IQ automatic corrections by hour <span class="sub muted" id="hourAutoSub"></span></h3>
           <div class="chartbox" id="hourAuto"></div>
-          <h3>Mode by hour <span class="sub muted">share of each hour, complete days · Automatic is the plain background</span></h3>
+          <h3>Mode by hour <span class="sub muted">pump clock · share of each hour, complete days · Automatic is the plain background</span></h3>
           <div class="chartbox" id="hourMode"></div>
           <p class="legend" id="hourModeLegend"></p>
         </div>
@@ -288,7 +288,7 @@
 
   <div class="panel" id="tab-days" hidden>
     <section class="rep">
-      <h2>Days <span class="sub muted" id="daysSub">Newest first · glucose with what went in and what the pump did</span></h2>
+      <h2>Days <span class="sub muted" id="daysSub">Newest first · glucose with what went in and what the pump did · times on the pump clock</span></h2>
       <p class="legend" id="daysLegend"></p>
       <p class="small muted" id="daysStatus"></p>
       <div id="daysList"></div>
@@ -337,7 +337,7 @@
 
     <section id="dailyTddSection" class="rep hidden">
       <h2>Daily total dose <span class="sub muted" id="dTddSub"></span></h2>
-      <p class="small muted">Bars: U per pump-local day, split basal / user bolus / automatic, total above each bar. Line: 7-day rolling mean over complete days. Faded with *: incomplete day (pump data missing or not matching), left out of the mean.</p>
+      <p class="small muted">Bars: U per day on the pump clock, split basal / user bolus / automatic, total above each bar. Line: 7-day rolling mean over complete days. Faded with *: incomplete day (pump data missing or not matching), left out of the mean.</p>
       <div class="scroll" id="dTddScroll"><div class="chartbox" id="dTdd"></div></div>
     </section>
     <p class="small muted" id="trendsEmpty" hidden>No weekly insulin or health data in this window.</p>
@@ -350,7 +350,7 @@
       <textarea id="paste" rows="7" placeholder="Paste the copied pump settings text here" aria-label="Copied pump settings text"></textarea>
       <div class="row"><button class="primary" id="import">Import</button></div>
       <p id="pumpStatus" class="small muted"></p>
-      <h3>Stored uploads</h3>
+      <h3>Stored uploads <span class="sub muted">upload time, pump clock</span></h3>
       <ul class="uploads" id="uploads"></ul>
       <div id="pumpView"></div>
     </section>
@@ -373,8 +373,8 @@
       <h2>Deep-dive exports</h2>
       <p class="small muted">When the reviewer asks for a 48 to 72 h window, set it here and upload the files it asks for.</p>
       <div class="row">
-        <label>From <input type="datetime-local" id="xStart"></label>
-        <label>To <input type="datetime-local" id="xEnd"></label>
+        <label>From (pump clock) <input type="datetime-local" id="xStart"></label>
+        <label>To (pump clock) <input type="datetime-local" id="xEnd"></label>
         <button data-export="timeline">Glucose timeline</button>
         <button data-export="bolus">Enriched bolus log</button>
         <button data-export="hourly">Hourly trends</button>
@@ -391,7 +391,12 @@
 // string (UTC getters), never shifted into the browser's time zone.
 const $ = (id) => document.getElementById(id);
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const num = (v, d = 1) => (v == null || !Number.isFinite(+v) ? '—' : (+v).toFixed(d));
+// Display only: a true minus sign, and no "-0.0".
+const num = (v, d = 1) => {
+  if (v == null || !Number.isFinite(+v)) return '—';
+  const t = (+v).toFixed(d);
+  return /^-0(\.0+)?$/.test(t) ? t.slice(1) : t.replace('-', '−');
+};
 const day = (iso) => (iso ? iso.slice(0, 10) : '—');
 const stamp = (iso) => (iso ? iso.slice(0, 16).replace('T', ' ') : '—');
 const addDays = (ymd, n) => new Date(Date.parse(ymd + 'T00:00:00Z') + n * 864e5).toISOString().slice(0, 10);
@@ -1470,7 +1475,7 @@ async function refresh() {
     try { body = await res.json(); } catch { /* proxy error page */ }
     if (!res.ok) throw new Error(body?.error || `HTTP ${res.status}`);
     const n = body.newReadings;
-    outcome = `Synced ${new Date(body.syncedAt).toLocaleTimeString()}: ${n > 0 ? `${n} new CGM reading${n === 1 ? '' : 's'}` : 'no new CGM readings'}, data through ${body.latest ? body.latest.slice(0, 16).replace('T', ' ') + ' UTC' : 'nothing yet'}. ${{ updated: 'Health data updated.', 'not-configured': 'Health not configured.' }[body.health?.status] || `Health refresh failed${body.health?.hint ? ': ' + body.health.hint : ''}`}`;
+    outcome = `Synced ${new Date(body.syncedAt).toLocaleTimeString()}: ${n > 0 ? `${n} new CGM reading${n === 1 ? '' : 's'}` : 'no new CGM readings'}, data through ${body.latest ? body.latest.slice(0, 16).replace('T', ' ') + ' (pump clock)' : 'nothing yet'}. ${{ updated: 'Health data updated.', 'not-configured': 'Health not configured.' }[body.health?.status] || `Health refresh failed${body.health?.hint ? ': ' + body.health.hint : ''}`}`;
   } catch (e) {
     $('status').innerHTML = `<span class="err">Refresh failed: ${esc(e.message)}</span>`;
     $('refresh').disabled = $('load').disabled = false;
