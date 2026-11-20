@@ -76,6 +76,9 @@ assert.deepStrictEqual(
   { status: 'done', newReadings: 288, latest: '2001-03-11T23:55:00.000Z' }
 );
 assert.ok(!Number.isNaN(Date.parse(body.syncedAt)));
+// 2b. Health not configured: Glooko result unchanged, plus a "not configured" status with the hint.
+assert.strictEqual(body.health.status, 'not-configured');
+assert.match(body.health.hint, /not configured/);
 
 // 3. Again with nothing new: done, zero new readings.
 body = await (await refresh()).json();
@@ -101,6 +104,38 @@ r = await refresh();
 assert.strictEqual(r.status, 502);
 assert.deepStrictEqual(await r.json(), { status: 'error', error: 'Glooko login failed (stub)' });
 assert.strictEqual(isSyncing(), false);
+
+// 6. Health configured: every refresh forces a Google top-up, even with fresh data (no real Google calls).
+for (const [k, v] of Object.entries({ CLIENT_ID: 'c', CLIENT_SECRET: 's', REFRESH_TOKEN: 'r' })) process.env['OMNI_GHEALTH_' + k] = v;
+const realFetch = globalThis.fetch;
+let google = 0;
+let googleFail = null;
+globalThis.fetch = async (url, init) => {
+  const u = new URL(url);
+  if (u.hostname === '127.0.0.1') return realFetch(url, init);
+  google++;
+  if (u.host === 'oauth2.googleapis.com') {
+    return new Response(JSON.stringify({ access_token: 'a', expires_in: 3600 }), { status: 200 });
+  }
+  if (googleFail) return new Response(JSON.stringify({ error: { message: 'nope', details: [{ reason: 'ACCOUNT_NOT_LINKED' }] } }), { status: 400 });
+  return new Response('{}', { status: 200 });
+};
+fail = null;
+body = await (await refresh()).json(); // first pull: initial full sync
+assert.strictEqual(body.health.status, 'updated');
+google = 0;
+body = await (await refresh()).json(); // data is now fresh (< 6 h): lazy sync would skip, refresh must not
+assert.strictEqual(body.health.status, 'updated');
+assert.ok(google > 0, 'refresh must pull health even when stored data is fresh');
+
+// 7. A health failure never fails the Glooko refresh; hint is passed through.
+googleFail = true;
+r = await refresh();
+assert.strictEqual(r.status, 200);
+body = await r.json();
+assert.strictEqual(body.status, 'done');
+assert.strictEqual(body.health.status, 'error');
+assert.match(body.health.hint, /no Google Health profile/);
 
 console.log('OK: POST /api/refresh');
 setTimeout(() => process.exit(0), 100);

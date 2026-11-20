@@ -34,6 +34,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { createServer, glucoseDefaults } from './server.js';
 import { glookoConfigured } from './range.js';
+import { forceHealthTopUp } from './health.js';
 import { fetchGlookoRange } from './glooko.js';
 import { ensureFreshOnFirstCall, runTopUp, isSyncing } from './sync.js';
 import { initDb, getEarliestCgmEpoch, getLatestCgmEpoch, getCgmCount, getMeta, savePumpSettings } from './store.js';
@@ -364,7 +365,8 @@ async function importPumpSettings(req, res) {
 }
 
 // POST /api/refresh — runs the same locked Glooko top-up the MCP server uses and
-// answers when it finishes: { status: 'done', newReadings, latest, syncedAt }.
+// answers when it finishes: { status: 'done', newReadings, latest, syncedAt, health }, where
+// health is { status: 'updated' | 'not-configured' | 'error', error?, hint? } and is reported apart from Glooko.
 // A sync already running answers 409 { status: 'in-progress' } at once rather
 // than queueing a second pull; a failed pull is 502 { status: 'error', error }.
 async function refreshArchive(res) {
@@ -379,11 +381,17 @@ async function refreshArchive(res) {
     console.error('[ridgeline] web refresh failed:', err.message);
     return sendJson(res, 502, { status: 'error', error: err.message });
   }
+  // Health has its own lock and never fails the Glooko refresh; ensureHealthFresh never throws.
+  const h = await forceHealthTopUp();
+  const health = h.ok
+    ? { status: 'updated' }
+    : { status: h.configured === false ? 'not-configured' : 'error', error: h.error, hint: h.hint };
   return sendJson(res, 200, {
     status: 'done',
     newReadings: getCgmCount() - before,
     latest: iso(getLatestCgmEpoch()),
     syncedAt: new Date().toISOString(),
+    health,
   });
 }
 

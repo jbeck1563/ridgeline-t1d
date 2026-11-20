@@ -1293,7 +1293,7 @@ async function refresh() {
     try { body = await res.json(); } catch { /* proxy error page */ }
     if (!res.ok) throw new Error(body?.error || `HTTP ${res.status}`);
     const n = body.newReadings;
-    outcome = `Synced ${new Date(body.syncedAt).toLocaleTimeString()}: ${n > 0 ? `${n} new CGM reading${n === 1 ? '' : 's'}` : 'no new CGM readings'}, data through ${body.latest ? body.latest.slice(0, 16).replace('T', ' ') + ' UTC' : 'nothing yet'}.`;
+    outcome = `Synced ${new Date(body.syncedAt).toLocaleTimeString()}: ${n > 0 ? `${n} new CGM reading${n === 1 ? '' : 's'}` : 'no new CGM readings'}, data through ${body.latest ? body.latest.slice(0, 16).replace('T', ' ') + ' UTC' : 'nothing yet'}. ${{ updated: 'Health data updated.', 'not-configured': 'Health not configured.' }[body.health?.status] || `Health refresh failed${body.health?.hint ? ': ' + body.health.hint : ''}`}`;
   } catch (e) {
     $('status').innerHTML = `<span class="err">Refresh failed: ${esc(e.message)}</span>`;
     $('refresh').disabled = $('load').disabled = false;
