@@ -157,6 +157,11 @@
   .uploads button { font-family: var(--font-outlier); font-size: var(--text-sm); }
   .uploads button.on { border-color: var(--color-accent); box-shadow: inset 0 0 0 1px var(--color-accent); }
   ul.small { padding-left: var(--space-lg); overflow-wrap: anywhere; }
+  ul.changes li + li { margin-top: var(--space-2xs); }
+  .obs { margin: 0; padding: 0; list-style: none; display: grid; gap: var(--space-sm); }
+  .obs li { padding: var(--space-sm) var(--space-md); background: var(--color-paper-2); border-radius: var(--radius-input); border-left: 3px solid var(--color-accent); font-size: var(--text-sm); }
+  .obs li b { color: var(--color-ink); font-weight: 500; }
+  .obs .n { display: block; margin-top: 2px; color: var(--color-muted); font-size: var(--text-xs); }
   /* Tabs, range and freshness bar (step 3 of the interface exploration). */
   :root { --sleep: oklch(68% 0.08 255); --exercise: oklch(72% 0.11 312); --manual: oklch(60% 0.01 160); --mode-auto: var(--color-paper-2); }
   :root[data-theme="white"] { --sleep: oklch(55% 0.09 255); --exercise: oklch(52% 0.13 312); --manual: oklch(58% 0.01 160); --mode-auto: oklch(90% 0.012 160); }
@@ -171,8 +176,9 @@
   .custom { display: flex; flex-wrap: wrap; gap: var(--space-sm); align-items: end; flex-basis: 100%; justify-content: flex-end; }
   .fresh { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2xs) var(--space-sm); margin: 0; padding-block: var(--space-sm) 0; font-size: var(--text-sm); color: var(--color-muted); }
   .fresh b { color: var(--color-ink); font-weight: 500; }
-  .fresh .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); flex: none; }
-  .fresh .dot.stale { background: var(--high); }
+  /* Not glucose colours: the archive's freshness is app state, not a reading. */
+  .fresh .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--color-accent); flex: none; }
+  .fresh .dot.stale { background: var(--color-error); }
   .fresh button { min-height: 32px; padding: 0 var(--space-sm); font-size: var(--text-sm); }
   @media (max-width: 40rem) { .topbar .shell { flex-direction: column; flex-wrap: nowrap; align-items: stretch; } .range { justify-content: space-between; } .presets button { min-width: 2.9rem; padding-inline: var(--space-xs); } .custom { justify-content: flex-start; } }
   .panel { display: grid; gap: var(--space-md); min-width: 0; }
@@ -271,23 +277,28 @@
       <div class="chartbox" id="agp"></div>
       <p class="legend" id="agpLegend"></p>
       <div id="hourCharts">
-        <h3>Time in ranges by hour <span class="sub muted">share of each hour's readings · number: % in range 3.9–10.0</span></h3>
+        <h3>Time in ranges by hour <span class="sub muted">pump clock · share of each hour's readings · number: % in range 3.9–10.0</span></h3>
         <div class="chartbox" id="hourBands"></div>
         <div id="hourCiq">
           <h3>Control-IQ automatic corrections by hour <span class="sub muted" id="hourAutoSub"></span></h3>
           <div class="chartbox" id="hourAuto"></div>
-          <h3>Mode by hour <span class="sub muted">share of each hour, complete days · Automatic is the plain background</span></h3>
+          <h3>Mode by hour <span class="sub muted">pump clock · share of each hour, complete days · Automatic is the plain background</span></h3>
           <div class="chartbox" id="hourMode"></div>
           <p class="legend" id="hourModeLegend"></p>
         </div>
       </div>
     </section>
 
+    <section class="rep" id="obsSection">
+      <h2>What stands out <span class="sub muted">descriptive only, each with the evidence behind it · pump clock</span></h2>
+      <ul class="obs" id="obs"></ul>
+      <p class="caveat" id="obsCaveat"></p>
+    </section>
   </div>
 
   <div class="panel" id="tab-days" hidden>
     <section class="rep">
-      <h2>Days <span class="sub muted" id="daysSub">Newest first · glucose with what went in and what the pump did</span></h2>
+      <h2>Days <span class="sub muted" id="daysSub">Newest first · glucose with what went in and what the pump did · times on the pump clock</span></h2>
       <p class="legend" id="daysLegend"></p>
       <p class="small muted" id="daysStatus"></p>
       <div id="daysList"></div>
@@ -313,7 +324,7 @@
         <p class="small" id="tddSummary"></p>
         <div class="chartbox" id="wTdd"></div>
       </div>
-      <h3>Mean glucose and variability <span class="sub muted">labels: CV</span></h3>
+      <h3>Mean glucose and variability <span class="sub muted">above each point: CV · below: weekly mean</span></h3>
       <div class="chartbox" id="wMean"></div>
       <div id="wHealthBlock">
         <h3>Activity and sleep <span class="sub muted">Google Health · steps a day above, sleep under each week</span></h3>
@@ -336,7 +347,7 @@
 
     <section id="dailyTddSection" class="rep hidden">
       <h2>Daily total dose <span class="sub muted" id="dTddSub"></span></h2>
-      <p class="small muted">Bars: U per pump-local day, split basal / user bolus / automatic, total above each bar. Line: 7-day rolling mean over complete days. Faded with *: incomplete day (pump data missing or not matching), left out of the mean.</p>
+      <p class="small muted">Bars: U per day on the pump clock, split basal / user bolus / automatic, total above each bar. Line: 7-day rolling mean over complete days. Faded with *: incomplete day (pump data missing or not matching), left out of the mean.</p>
       <div class="scroll" id="dTddScroll"><div class="chartbox" id="dTdd"></div></div>
     </section>
     <p class="small muted" id="trendsEmpty" hidden>No weekly insulin or health data in this window.</p>
@@ -344,18 +355,23 @@
 
   <div class="panel" id="tab-settings" hidden>
     <section id="pumpSection">
-      <h2>Pump settings <span class="sub">(pasted from t:connect)</span></h2>
+      <h2>Pump settings <span class="sub muted">pasted from t:connect · the settings as programmed on the pump</span></h2>
+      <h3>Stored uploads <span class="sub muted">upload time, pump clock</span></h3>
+      <ul class="uploads" id="uploads"></ul>
+      <div id="pumpView"></div>
+      <div id="pumpChangesBlock" hidden>
+        <h3>Changed since the previous upload <span class="sub muted" id="pumpChangesSub"></span></h3>
+        <ul class="small changes" id="pumpChanges"></ul>
+      </div>
+      <h3>Import a new snapshot</h3>
       <p class="small muted">Glooko does not receive Tandem profile settings. On the t:connect web pump settings view, copy all of the text and paste it here. Your name, date of birth, pump serial number and CGM transmitter ID are dropped before anything is stored.</p>
       <textarea id="paste" rows="7" placeholder="Paste the copied pump settings text here" aria-label="Copied pump settings text"></textarea>
       <div class="row"><button class="primary" id="import">Import</button></div>
       <p id="pumpStatus" class="small muted"></p>
-      <h3>Stored uploads</h3>
-      <ul class="uploads" id="uploads"></ul>
-      <div id="pumpView"></div>
     </section>
 
     <section class="rep">
-      <h2>Settings in force <span class="sub muted" id="settingsSub"></span></h2>
+      <h2>Glooko settings in force <span class="sub muted" id="settingsSub"></span></h2>
       <div id="settings"></div>
     </section>
   </div>
@@ -372,8 +388,8 @@
       <h2>Deep-dive exports</h2>
       <p class="small muted">When the reviewer asks for a 48 to 72 h window, set it here and upload the files it asks for.</p>
       <div class="row">
-        <label>From <input type="datetime-local" id="xStart"></label>
-        <label>To <input type="datetime-local" id="xEnd"></label>
+        <label>From (pump clock) <input type="datetime-local" id="xStart"></label>
+        <label>To (pump clock) <input type="datetime-local" id="xEnd"></label>
         <button data-export="timeline">Glucose timeline</button>
         <button data-export="bolus">Enriched bolus log</button>
         <button data-export="hourly">Hourly trends</button>
@@ -390,7 +406,12 @@
 // string (UTC getters), never shifted into the browser's time zone.
 const $ = (id) => document.getElementById(id);
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const num = (v, d = 1) => (v == null || !Number.isFinite(+v) ? '—' : (+v).toFixed(d));
+// Display only: a true minus sign, and no "-0.0".
+const num = (v, d = 1) => {
+  if (v == null || !Number.isFinite(+v)) return '—';
+  const t = (+v).toFixed(d);
+  return /^-0(\.0+)?$/.test(t) ? t.slice(1) : t.replace('-', '−');
+};
 const day = (iso) => (iso ? iso.slice(0, 10) : '—');
 const stamp = (iso) => (iso ? iso.slice(0, 16).replace('T', ' ') : '—');
 const addDays = (ymd, n) => new Date(Date.parse(ymd + 'T00:00:00Z') + n * 864e5).toISOString().slice(0, 10);
@@ -455,20 +476,22 @@ function renderGlucose(s) {
   const u = config.unit;
   const tbr = b.low + b.veryLow, tar = b.high + b.veryHigh;
   $('tirSub').textContent = `${s.reportRange?.days ?? 0} days of data · ${(g.cgmReadingCount ?? 0).toLocaleString('en')} readings`;
+  // T4: change against the window of equal length just before this one.
+  const pv = report.previous, pb = pv && !pv.error && pv.cgmReadingCount ? pv.consensusBands : null;
+  const spanD = Math.round((Date.parse(report.window.end) - Date.parse(report.window.start)) / 864e5);
+  const vsPrev = (cur, prev) => (pb
+    ? `${cur - prev >= 0 ? '+' : ''}${num(cur - prev)} pts vs previous ${spanD} d${pv.days < spanD - 0.5 ? ` (${num(pv.days, 0)} d of data)` : ''}`
+    : `No previous ${spanD} d to compare`);
   $('glucoseTiles').innerHTML = [
-    ['lead', `Time in range · ${rangeOf('inRange')}`, `${num(b.inRange)}<small>%</small>`, [`Target over 70 % · ${chip(b.inRange > 70, 'met', 'below')}`]],
-    ['', `Below range · under ${isMgdl() ? 70 : 3.9}`, `${num(tbr)}<small>%</small>`, [`Target under 4 % · ${chip(tbr < 4, 'met', 'over')}`, `${num(tbr * 14.4, 0)} min a day`, `Very low ${num(b.veryLow)} % · under 1 % ${chip(b.veryLow < 1, 'met', 'over')}`]],
+    ['lead', `Time in range · ${rangeOf('inRange')}`, `${num(b.inRange)}<small>%</small>`, [`Target over 70 % · ${chip(b.inRange > 70, 'met', 'below')}`, esc(vsPrev(b.inRange, pb?.inRange))]],
+    ['', `Below range · under ${isMgdl() ? 70 : 3.9}`, `${num(tbr)}<small>%</small>`, [`Target under 4 % · ${chip(tbr < 4, 'met', 'over')}`, esc(vsPrev(tbr, pb && pb.low + pb.veryLow)), `${num(tbr * 14.4, 0)} min a day`, `Very low ${num(b.veryLow)} % · under 1 % ${chip(b.veryLow < 1, 'met', 'over')}`]],
     ['', `Above range · over ${isMgdl() ? 180 : '10.0'}`, `${num(tar)}<small>%</small>`, [`Target under 25 % · ${chip(tar < 25, 'met', 'over')}`, `Very high ${num(b.veryHigh)} % · under 5 % ${chip(b.veryHigh < 5, 'met', 'over')}`]],
     ['', 'GMI (estimated A1c)', `${num(g.gmiEstimatedA1c)}<small>%</small>`, [`Usual target under 7 % · ${chip(g.gmiEstimatedA1c < 7, 'met', 'over')}`, 'Targets are set per person', `Mean ${num(g.averageBG)} ${esc(u)}, SD ${num(g.stdDev)}`]],
     ['', 'Variability (CV)', `${num(g.coefficientOfVariation)}<small>%</small>`, [`Target 36 % or less · ${chip(g.coefficientOfVariation <= 36, 'met', 'over')}`]],
     ['', 'CGM active', `${num(g.cgmActivePercent)}<small>%</small>`, [`70 % of 14 days needed for a valid report · ${chip(g.cgmActivePercent >= 70, 'enough', 'too little')}`]],
   ].map(([cls, k, v, lines]) => `<div class="tile${cls ? ' ' + cls : ''}"><span>${esc(k)}</span><b>${v}</b>${lines.map((l) => `<span class="t">${l}</span>`).join('')}</div>`).join('');
   drawStack();
-  const bw = s.bestWorst || {};
-  const fmt = (x, key) => (x ? `${x[key]} — TIR ${num(x.tir)} %, CV ${num(x.cv)} %` : null);
   $('bestWorst').innerHTML = dl([
-    ['Best day', fmt(bw.bestDay, 'day')], ['Worst day', fmt(bw.worstDay, 'day')],
-    ['Best hour', fmt(bw.bestHour, 'hour')], ['Worst hour', fmt(bw.worstHour, 'hour')],
     ['Highest', s.glucoseExtremes?.highest ? `${s.glucoseExtremes.highest.value} ${u} (${s.glucoseExtremes.highest.count}×)` : null],
     ['Lowest', s.glucoseExtremes?.lowest ? `${s.glucoseExtremes.lowest.value} ${u} (${s.glucoseExtremes.lowest.count}×)` : null],
   ]);
@@ -488,9 +511,9 @@ function drawStack() {
     const over = band.over(b);
     out += `<rect x="0" y="${top}" width="${bw}" height="${Math.max(0, h)}" fill="${band.color}"/>`;
     out += `<path d="M${bw + 2} ${mid} L${bw + 14} ${mid} L${bw + 22} ${ry}" fill="none" stroke="var(--line)"/>`;
-    out += T(bw + 28, ry - 3, band.label, { fill: 'var(--color-ink)', size: 13 }) + T(bw + 36 + band.label.length * 8, ry - 3, isMgdl() ? band.mgdl : band.mmol, { size: 11 });
+    out += T(bw + 28, ry - 3, band.label, { fill: 'var(--color-ink)', size: 12 }) + T(bw + 34 + band.label.length * 7, ry - 3, isMgdl() ? band.mgdl : band.mmol, { size: 10.5 });
     out += T(bw + 28, ry + 13, `target ${band.target}`, { size: 10.5, fill: over ? 'var(--high)' : 'var(--muted)' });
-    out += T(W - 2, ry - 2, `${over ? '! ' : ''}${num(v)} %`, { anchor: 'end', size: 15, fill: over ? 'var(--high)' : 'var(--color-ink)', weight: 500 });
+    out += T(W - 2, ry - 2, `${over ? '! ' : ''}${num(v)} %`, { anchor: 'end', size: 12, fill: over ? 'var(--high)' : 'var(--color-ink)', weight: 500 });
   });
   el.innerHTML = svgEl(W, H, out, `Time in ranges: ${BANDS.map((x) => `${x.label} ${num(b[x.k])} %`).join(', ')}`);
 }
@@ -512,8 +535,10 @@ function drawAgp(mini) {
   let s = `<rect x="${L}" y="${y(c.high)}" width="${W - L - R}" height="${y(c.low) - y(c.high)}" fill="var(--ok)" opacity="0.12"/>`;
   for (const v of [c.low, c.high]) s += `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="var(--ok)"/>`;
   s += `<line x1="${L}" x2="${W - R}" y1="${y(c.veryLow)}" y2="${y(c.veryLow)}" stroke="var(--vlow)" stroke-dasharray="3 3"/><line x1="${L}" x2="${W - R}" y1="${y(c.veryHigh)}" y2="${y(c.veryHigh)}" stroke="var(--vhigh)" stroke-dasharray="3 3"/>`;
-  for (const v of [c.veryLow, c.low, c.high, c.veryHigh]) s += T(L - 6, y(v) + 4, num(v, mg ? 0 : 1), { anchor: 'end', size: 11 });
-  s += T(L - 6, y(yMax) + 4, String(yMax), { anchor: 'end', size: 11 });
+  // Labels at least 11 px apart: 3.0 and 3.9 sit close on a short plot.
+  const gap = Math.max(0, 11 - (y(c.veryLow) - y(c.low))) / 2;
+  for (const [v, dy] of [[c.veryLow, gap], [c.low, -gap], [c.high, 0], [c.veryHigh, 0]]) s += T(L - 6, y(v) + 4 + dy, num(v, mg ? 0 : 1), { anchor: 'end', size: 11 });
+  s += T(L - 6, y(yMax) + 4, String(yMax), { anchor: 'end', size: 11 }) + T(L + 4, Tp + 10, a.unit, { size: 10 });
   for (let h = 0; h <= 24; h += 3) {
     s += `<line x1="${x(h * 60)}" x2="${x(h * 60)}" y1="${Tp}" y2="${H - B}" stroke="var(--line)" opacity="0.6"/>`;
     if (!(compact && W < 640) || h % 6 === 0) s += T(x(h * 60), H - 8, String(h).padStart(2, '0'), { anchor: 'middle', size: 11 });
@@ -577,6 +602,7 @@ function drawHours() {
       }
       s += '</g>';
     }
+    for (const v of [0, 50]) s += T(L - 6, top + ch - (v / 100) * ch + 4, v ? '50%' : '0', { anchor: 'end', size: 10 });
     $('hourBands').innerHTML = svgEl(W, H, s + axis(top, top + ch), `Time in ranges for each clock hour: ${tir.map((v, h) => `${hh(h)} ${v ?? 'no data'}${v == null ? '' : ' %'}`).join(', ')}`);
   } else $('hourBands').innerHTML = '';
   if (!ciqOn) return;
@@ -591,7 +617,7 @@ function drawHours() {
       const hgt = (counts[i] / max) * ch;
       if (hgt) s += `<rect x="${x(i) + cw * 0.18}" y="${top + ch - hgt}" width="${cw * 0.64}" height="${hgt}" rx="2" fill="var(--color-accent)"><title>${hh(i)}: ${counts[i]} automatic corrections on ${h.autoBolus.daysWithAutoBolus} of ${n} days</title></rect>`;
     });
-    s += `<line x1="${L}" x2="${W - R}" y1="${top + ch}" y2="${top + ch}" stroke="var(--line)"/>` + T(L - 6, top + 8, String(max), { anchor: 'end', size: 10 });
+    s += `<line x1="${L}" x2="${W - R}" y1="${top + ch}" y2="${top + ch}" stroke="var(--line)"/><line x1="${L}" x2="${W - R}" y1="${top}" y2="${top}" stroke="var(--line)" opacity="0.6"/>` + T(L - 6, top + 8, String(max), { anchor: 'end', size: 10 }) + T(L - 6, top + ch, '0', { anchor: 'end', size: 10 });
     const [r1, h1] = valueRow(top + ch + 3, 'n', counts.map((c) => c || null), () => 'var(--color-ink)');
     const [r2, h2] = valueRow(top + ch + 3 + h1, 'days', bh.map((h) => h.autoBolus.daysWithAutoBolus || null));
     const bottom = top + ch + 3 + h1 + h2;
@@ -689,6 +715,18 @@ function renderModes() {
     `<dt></dt><dd class="small muted">${mr.exclusive ? `Mean over ${report.controlIq.summary.completeDays} complete day(s).` : 'Share of the window; modes can overlap.'}</dd>`;
 }
 
+// T9: the server's "What stands out" list; the page only formats it.
+function renderStandouts() {
+  const so = report.standouts, items = so?.items || [];
+  $('obsSection').hidden = !items.length;
+  const plural = (n, w) => `${n.toLocaleString('en')} ${w}${n === 1 ? '' : 's'}`;
+  $('obs').innerHTML = items.map((x) => {
+    const n = [x.days != null && plural(x.days, 'day'), x.readings != null && plural(x.readings, 'reading'), x.events != null && plural(x.events, 'automatic correction')].filter(Boolean).join(' · ');
+    return `<li><b>${esc(x.title)}</b>: ${esc(x.detail)}<span class="n">${esc(n)}</span></li>`;
+  }).join('');
+  $('obsCaveat').textContent = so?.caveat || '';
+}
+
 function renderControlIq() {
   const r = report.controlIq;
   const show = isControlIq() && r && !r.error;
@@ -759,7 +797,7 @@ function settingsBlocks(s, u) {
 
 function renderSettings(s) {
   const blocks = settingsBlocks(s, config.unit);
-  $('settingsSub').textContent = `From Glooko for ${day(s.reportRange?.start)} to ${day(s.reportRange?.end)}${blocks.length ? `, last effective ${blocks.at(-1).effective} (pump clock)` : ''}. Tandem pumps usually do not send settings to Glooko, so the pasted snapshot above is the one to trust.`;
+  $('settingsSub').textContent = `Source: Glooko, for ${day(s.reportRange?.start)} to ${day(s.reportRange?.end)}${blocks.length ? `, last effective ${blocks.at(-1).effective} (pump clock)` : ', none in this window'}. Tandem pumps usually do not send settings to Glooko, so the pasted snapshot above is the one to trust.`;
   $('settings').innerHTML = blocks.length
     ? blocks.map((b) => `<h3>Effective ${esc(b.effective)}</h3><dl>${dl(b.rows)}</dl>`).join('')
     : `<p class="muted">${esc(s.settingsNote || 'No pump settings stored for this window.')}</p>`;
@@ -786,7 +824,25 @@ function profileTable(p, u) {
     ])}</dl>`;
 }
 
-function renderPumpSettings(snap, uploads) {
+// Server-computed diff against the upload before the one shown (get_pump_settings changes).
+function renderPumpChanges(snap, changes) {
+  $('pumpChangesBlock').hidden = !snap;
+  if (!snap) return;
+  const at = (x) => esc(x.replace('T', ' '));
+  if (!changes) {
+    $('pumpChangesSub').textContent = 'first stored upload';
+    $('pumpChanges').innerHTML = '<li class="muted">Nothing to compare with yet.</li>';
+    return;
+  }
+  $('pumpChangesSub').innerHTML = `against ${at(changes.previousUpload)} (pump clock)`;
+  const v = (x) => (x == null ? '<span class="muted">not set</span>' : esc(x));
+  $('pumpChanges').innerHTML = changes.items.length
+    ? changes.items.map((c) => (c.item === 'Profile' ? `<li><b>${esc(c.section)}</b>: profile ${c.after ? 'added' : 'removed'}</li>` : `<li><b>${esc(c.section)} · ${esc(c.item)}</b>: ${v(c.before)} → ${v(c.after)}</li>`)).join('')
+    : '<li class="muted">No setting changed.</li>';
+}
+
+function renderPumpSettings(snap, uploads, changes) {
+  renderPumpChanges(snap, changes);
   $('uploads').innerHTML = uploads.length
     ? uploads.map((u) => `<li><button data-upload="${esc(u)}" class="${snap?.uploadDate === u ? 'on' : ''}">${esc(u.replace('T', ' '))}</button></li>`).join('')
     : '<li class="small muted">None yet.</li>';
@@ -819,7 +875,7 @@ function renderPumpSettings(snap, uploads) {
 async function loadPumpSettings(at) {
   try {
     const r = await getJson('/api/pump-settings' + (at ? `?at=${encodeURIComponent(at)}` : ''));
-    renderPumpSettings(r.snapshot, r.uploads);
+    renderPumpSettings(r.snapshot, r.uploads, r.changes);
   } catch (e) {
     $('pumpStatus').innerHTML = `<span class="err">Error: ${esc(e.message)}</span>`;
   }
@@ -840,7 +896,7 @@ async function importPaste() {
     const n = body.snapshot.profiles.length;
     $('pumpStatus').textContent = `${body.saved ? 'Saved' : 'Already stored, nothing changed'}: upload ${body.snapshot.uploadDate.replace('T', ' ')}, ${n} profile${n === 1 ? '' : 's'}, ${body.snapshot.warnings.length} line(s) not understood.`;
     $('paste').value = '';
-    renderPumpSettings(body.snapshot, body.uploads);
+    renderPumpSettings(body.snapshot, body.uploads, body.changes);
   } catch (e) {
     $('pumpStatus').innerHTML = `<span class="err">Error: ${esc(e.message)}</span>`;
   } finally {
@@ -1087,7 +1143,7 @@ function renderDays() {
   $('daysList').innerHTML = days.map((d, i) => {
     const b = d.bands;
     const tdd = d.tdd == null ? 'TDD —' : `TDD ${num(d.tdd)} U${d.tddComplete ? '' : ' (partial)'}`;
-    const facts = [b ? `TIR ${num(b.inRange, 0)} %` : 'no CGM', tdd, `${d.carbsGrams} g carbs`, d.autoCorrections ? `${d.autoCorrections.count} auto` : null].filter(Boolean).join(' · ');
+    const facts = [b ? `TIR ${num(b.inRange, 0)} %` : 'no CGM', tdd, `${d.carbsGrams} g carbs`, d.autoCorrections?.count ? `${d.autoCorrections.count} auto, ${num(d.autoCorrections.units, 2)} U` : null].filter(Boolean).join(' · ');
     const tags = [...new Set(d.events.map((e) => kindTag[e.kind]))].concat(d.modes.some((m) => m.mode === 'manual') ? ['manual mode'] : []).map((t) => `<span class="tag2">${t}</span>`).join(' ');
     return `<article class="day" id="day-${d.date}"><div class="dayhead"><h3>${dlong(d.date)}</h3>${b ? bandBar(b) : ''}<span class="facts">${facts}</span>${tags}</div><div class="chartbox" data-i="${i}"></div></article>`;
   }).join('');
@@ -1126,7 +1182,8 @@ function drawDay(el, d) {
   const ly = gBot + evH + 4, bolH = user.length ? 10 + 12 * (Math.max(...bolRows) + 1) : 16;
   const ry = ly + bolH + 2, rib = 6, H = ry + rib + 16;
   let s = `<rect x="${L}" y="${y(hi)}" width="${W - L - R}" height="${y(lo) - y(hi)}" fill="var(--ok)" opacity="0.12"/>`;
-  for (const v of [lo, hi]) s += T(L - 5, y(v) + 4, String(v), { anchor: 'end', size: 10 });
+  for (const v of [lo, hi]) s += `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)" opacity="0.6"/>` + T(L - 5, y(v) + 4, String(v), { anchor: 'end', size: 10 });
+  s += T(L + 3, top + 10, config.unit, { size: 10 });
   for (let h = 0; h <= 24; h += 6) s += `<line x1="${x(h * 60)}" x2="${x(h * 60)}" y1="${top}" y2="${ry + rib}" stroke="var(--line)" opacity="0.5"/>` + T(x(h * 60), H - 2, String(h).padStart(2, '0'), { anchor: h === 24 ? 'end' : h ? 'middle' : 'start', size: 10 });
   d.events.forEach((e, i) => {
     s += `<line x1="${x(e.m)}" x2="${x(e.m)}" y1="${top}" y2="${gBot + evH}" stroke="var(--color-ink-2)" stroke-dasharray="2 3"/>` + T(x(e.m) + 3, gBot + 10 + 12 * evRows[i], e.kind, { size: 10, fill: 'var(--color-ink-2)' });
@@ -1187,7 +1244,7 @@ async function load() {
     trends = wide ? { ...wide, widened: true } : { window: w, health: report.health, tddTrend: report.tddTrend, controlIq: report.controlIq, widened: false };
     document.body.classList.add('loaded');
     $('device').textContent = `${deviceLine(s.device || config.device)} · ${config.online ? 'synced from Glooko' : 'offline archive'} · archive ${day(config.archive.earliest)} to ${day(config.archive.latest)}`;
-    renderGlucose(s); renderInsulin(s); renderModes(); renderControlIq(); renderTrends(); renderSettings(s);
+    renderGlucose(s); renderInsulin(s); renderModes(); renderControlIq(); renderStandouts(); renderTrends(); renderSettings(s);
     drawCharts();
     $('prompt').textContent = buildPrompt();
     $('xStart').value = w.start.slice(0, 16);
@@ -1259,7 +1316,7 @@ function drawDailyTdd() {
     s += '</g>' + T(x(i) + cw / 2, y(Math.max(d.totalDailyDose, y0)) - 4, `${num(d.totalDailyDose, 0)}${d.complete ? '' : '*'}`, { anchor: 'middle', size: 10, fill: d.complete ? 'var(--color-ink-2)' : 'var(--muted)' });
     const dt = new Date(d.date + 'T00:00:00Z');
     if (dt.getUTCDay() === 1 || i === 0) s += T(x(i) + cw / 2, H - 16, wkLabel(d.date), { anchor: i === 0 ? 'start' : 'middle', size: 10 }) + `<line x1="${x(i)}" x2="${x(i)}" y1="${top}" y2="${y(0)}" stroke="var(--line)" opacity="0.5"/>`;
-    s += T(x(i) + cw / 2, H - 3, DOW[dt.getUTCDay()].slice(0, 1), { anchor: 'middle', size: 9.5 });
+    s += T(x(i) + cw / 2, H - 3, DOW[dt.getUTCDay()].slice(0, 1), { anchor: 'middle', size: 10 });
   });
   const line = roll.map((v, i) => (v == null ? null : `${x(i) + cw / 2},${y(v)}`));
   // One polyline per run of days that have a mean, so gaps stay gaps.
@@ -1353,6 +1410,7 @@ function drawTrends() {
       if (!pts[i]) return;
       s += `<circle cx="${pts[i][0]}" cy="${pts[i][1]}" r="3" fill="var(--color-ink)"><title>Week of ${esc(w.week)}: mean ${num(w.mean)} ${esc(config.unit)}, CV ${num(w.cv)} %</title></circle>`;
       if (w.cv != null && !thin(i)) s += T(pts[i][0], pts[i][1] - 8, `${num(w.cv, 0)}%`, { anchor: 'middle', size: 10, fill: w.cv > 36 ? 'var(--high)' : 'var(--color-ink-2)' });
+      if (!thin(i)) s += T(pts[i][0], pts[i][1] + 14, num(w.mean, mg ? 0 : 1), { anchor: 'middle', size: 10, fill: 'var(--color-ink)' });
     });
   }
   $('wMean').innerHTML = svgEl(W, H, s + lab(H), `Weekly mean glucose and CV: ${weeks.filter((w) => w.mean != null).map((w) => `${w.week} ${num(w.mean)} ${config.unit}${w.cv != null ? `, CV ${num(w.cv, 0)} %` : ''}`).join('; ')}`);
@@ -1366,7 +1424,7 @@ function drawTrends() {
     s += grid(ys(sm), sm, `${sm / 1000}k`) + grid(ys(0), 0) + T(L - 6, H - 18, 'sleep', { anchor: 'end', size: 10 });
     weeks.forEach((w, i) => {
       if (w.steps != null) {
-        s += `<rect x="${x(i) + cw * 0.25}" y="${ys(w.steps)}" width="${cw * 0.5}" height="${ys(0) - ys(w.steps)}" rx="2" fill="var(--g-accent)" opacity="0.85"><title>Week of ${esc(w.week)}: ${w.steps} steps a day</title></rect>`;
+        s += `<rect x="${x(i) + cw * 0.25}" y="${ys(w.steps)}" width="${cw * 0.5}" height="${ys(0) - ys(w.steps)}" rx="2" fill="var(--color-muted)" opacity="0.85"><title>Week of ${esc(w.week)}: ${w.steps} steps a day</title></rect>`;
         if (!thin(i)) s += T(x(i) + cw / 2, ys(w.steps) - 4, `${num(w.steps / 1000, w.steps < 9950 ? 1 : 0)}k`, { anchor: 'middle', size: 10, fill: 'var(--color-ink-2)' });
       }
       if (w.sleepH != null && !thin(i)) s += T(x(i) + cw / 2, H - 18, `${num(w.sleepH)}h`, { anchor: 'middle', size: 10, fill: 'var(--color-ink-2)' });
@@ -1374,7 +1432,7 @@ function drawTrends() {
     $('wHealth').innerHTML = svgEl(W, H, s + lab(H), `Weekly steps a day and sleep: ${weeks.map((w) => `${w.week} ${w.steps ?? '—'} steps, ${num(w.sleepH)} h sleep`).join('; ')}`);
   }
   $('wLegend').innerHTML = (hasTdd ? '<span><i style="background:var(--insulin)"></i>Basal</span><span><i style="background:var(--color-ink-2)"></i>User bolus</span><span><i style="background:var(--color-accent)"></i>Automatic corrections</span><span><i class="sw-line"></i>4-week TDD / mean glucose</span><span><i style="background:var(--color-ink-2);opacity:.35"></i>Under 5 complete days</span>' : '<span><i class="sw-line"></i>Mean glucose</span>') +
-    (hasHealth ? '<span><i style="background:var(--g-accent)"></i>Steps a day</span>' : '');
+    (hasHealth ? '<span><i style="background:var(--color-muted)"></i>Steps a day</span>' : '');
 }
 
 // --- tabs, range and freshness ------------------------------------------------
@@ -1464,7 +1522,7 @@ async function refresh() {
     try { body = await res.json(); } catch { /* proxy error page */ }
     if (!res.ok) throw new Error(body?.error || `HTTP ${res.status}`);
     const n = body.newReadings;
-    outcome = `Synced ${new Date(body.syncedAt).toLocaleTimeString()}: ${n > 0 ? `${n} new CGM reading${n === 1 ? '' : 's'}` : 'no new CGM readings'}, data through ${body.latest ? body.latest.slice(0, 16).replace('T', ' ') + ' UTC' : 'nothing yet'}. ${{ updated: 'Health data updated.', 'not-configured': 'Health not configured.' }[body.health?.status] || `Health refresh failed${body.health?.hint ? ': ' + body.health.hint : ''}`}`;
+    outcome = `Synced ${new Date(body.syncedAt).toLocaleTimeString()}: ${n > 0 ? `${n} new CGM reading${n === 1 ? '' : 's'}` : 'no new CGM readings'}, data through ${body.latest ? body.latest.slice(0, 16).replace('T', ' ') + ' (pump clock)' : 'nothing yet'}. ${{ updated: 'Health data updated.', 'not-configured': 'Health not configured.' }[body.health?.status] || `Health refresh failed${body.health?.hint ? ': ' + body.health.hint : ''}`}`;
   } catch (e) {
     $('status').innerHTML = `<span class="err">Refresh failed: ${esc(e.message)}</span>`;
     $('refresh').disabled = $('load').disabled = false;

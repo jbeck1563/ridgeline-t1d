@@ -21,7 +21,7 @@ process.env.OMNI_MYDATA_BASIC = 'mcp:s3cret';
 for (const k of ['GLOOKO_EMAIL', 'GLOOKO_PASSWORD', 'OMNI_GHEALTH_CLIENT_ID', 'OMNI_GHEALTH_CLIENT_SECRET', 'OMNI_GHEALTH_REFRESH_TOKEN'])
   delete process.env[k];
 
-const { parseTandemSettings, minutesOf } = await import('./src/tandem-settings.js');
+const { parseTandemSettings, minutesOf, diffPumpSettings } = await import('./src/tandem-settings.js');
 
 const PASTE = `Testy McTestface
 Date of birth: Jan 1, 1990
@@ -172,6 +172,25 @@ assert.throws(() => parseTandemSettings('hello\nworld'), /No "Pump Profile setti
 assert.throws(() => parseTandemSettings('Pump Profile settings - 1\n'), /Upload date/);
 console.log('OK: parser');
 
+// 1b. Changes between two snapshots, values as printed.
+const CHANGED = PASTE.replace('Mar 4, 2001, 9:05 p.m.', 'Apr 1, 2001, 7:00 a.m.')
+  .replace('6:30 a.m.      1.1', '6:30 a.m.      1.2')
+  .replace('Weight: 70 kg', 'Weight: 72 kg')
+  .replace('Max bolus: 10 units', 'Max bolus: 12 units')
+  .replace(/Pump Profile settings - Profile 3[\s\S]*?(?=Control-IQ settings)/, '');
+const changedSnap = parseTandemSettings(CHANGED);
+assert.deepStrictEqual(diffPumpSettings(snap, snap), []);
+const EXPECTED_CHANGES = [
+  { section: 'Profile 7', item: 'Basal rate (units/hr)', before: '00:00 0.9, 06:30 1.1, 21:00 0.95', after: '00:00 0.9, 06:30 1.2, 21:00 0.95' },
+  { section: 'Control-IQ', item: 'Weight', before: '70 kg', after: '72 kg' },
+  { section: 'General', item: 'Max Bolus', before: '10 units', after: '12 units' },
+  { section: 'Profile 3', item: 'Profile', before: 'present', after: null },
+];
+assert.deepStrictEqual(diffPumpSettings(snap, changedSnap), EXPECTED_CHANGES);
+// The other way round, the profile is added rather than removed.
+assert.deepStrictEqual(diffPumpSettings(changedSnap, snap).filter((x) => x.section === 'Profile 3'), [{ section: 'Profile 3', item: 'Profile', before: null, after: 'present' }]);
+console.log('OK: settings diff');
+
 // 2. Store and MCP tool.
 const { savePumpSettings, initDb } = await import('./src/store.js');
 const { createServer } = await import('./src/server.js');
@@ -207,6 +226,8 @@ assert.strictEqual(r.status, 200);
 let j = await r.json();
 assert.strictEqual(j.saved, true);
 assert.strictEqual(j.snapshot.uploadDate, '2001-03-04T21:05');
+// Same settings as the February upload: an earlier upload, nothing changed.
+assert.deepStrictEqual(j.changes, { previousUpload: '2001-02-01T08:00', items: [] });
 assert.deepStrictEqual(j.uploads, ['2001-03-04T21:05', '2001-02-01T08:00']);
 j = await (await post(JSON.stringify({ text: PASTE }))).json();
 assert.strictEqual(j.saved, false);
@@ -232,6 +253,14 @@ assert.strictEqual((await tool({ at: '2001-03-04T21:00' })).snapshot.uploadDate,
 const none = await tool({ at: '2001-01-31' });
 assert.deepStrictEqual([none.snapshot, none.uploads.length], [null, 2]);
 assert.match(none.caveat, /Discuss with your endocrinologist before changing settings/);
+assert.strictEqual((await tool({ at: '2001-02-15' })).changes, null, 'the first upload has nothing to compare with');
+assert.deepStrictEqual((await tool({})).changes, { previousUpload: '2001-02-01T08:00', items: [] });
+
+// A changed upload: the route and the tool name what differs from the one before.
+j = await (await post(JSON.stringify({ text: CHANGED }))).json();
+assert.deepStrictEqual([j.saved, j.changes], [true, { previousUpload: '2001-03-04T21:05', items: EXPECTED_CHANGES }]);
+r = await fetch(base, { headers: BASIC });
+assert.deepStrictEqual((await r.json()).changes.items, EXPECTED_CHANGES);
 assert.ok((await tool({ at: '1 March' })).error);
 console.log('OK: store, get_pump_settings and /api/pump-settings');
 setTimeout(() => process.exit(0), 100);

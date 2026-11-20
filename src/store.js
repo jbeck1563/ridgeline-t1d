@@ -777,6 +777,14 @@ export function getPumpSettingsAt(atLocal) {
   return row ? JSON.parse(row.json) : null;
 }
 
+/** The latest snapshot uploaded strictly before `atLocal`, or null. */
+export function getPumpSettingsBefore(atLocal) {
+  const row = d()
+    .prepare('SELECT json FROM pump_settings_upload WHERE upload_local < ? ORDER BY upload_local DESC LIMIT 1')
+    .get(atLocal);
+  return row ? JSON.parse(row.json) : null;
+}
+
 // Test helper: wipe everything.
 export function _wipe() {
   const conn = d();

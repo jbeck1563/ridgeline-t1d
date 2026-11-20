@@ -370,12 +370,14 @@ export function processUnifiedGlookoData(rawJson) {
  */
 export function calculateHourly(timeline, thresholds, units = 'mmol') {
   const hourly = {};
+  const daysOf = {};
   const cgm = timeline.filter((i) => i.type === 'CGM');
   if (!cgm.length) return [];
   cgm.forEach((p) => {
-    const h = new Date(p.epoch * 1000).getUTCHours();
-    if (!hourly[h]) hourly[h] = [];
+    const d = new Date(p.epoch * 1000), h = d.getUTCHours();
+    if (!hourly[h]) { hourly[h] = []; daysOf[h] = new Set(); }
     hourly[h].push(p.val);
+    daysOf[h].add(d.toISOString().slice(0, 10));
   });
   return Object.keys(hourly)
     .map((h) => {
@@ -394,6 +396,7 @@ export function calculateHourly(timeline, thresholds, units = 'mmol') {
         veryHigh: metrics.veryHigh,
         consensusBands: metrics.bands,
         readings: hourly[h].length,
+        days: daysOf[h].size, // pump-local days with a reading in this hour
       };
     })
     .sort((a, b) => a.hourNum - b.hourNum);
@@ -1691,6 +1694,80 @@ export const CONTROLIQ_CAVEAT =
 
 const r2 = (v) => +v.toFixed(2);
 const r1 = (v) => +v.toFixed(1);
+
+/**
+ * "What stands out" for the Patterns tab: a few descriptive observations drawn
+ * from the get_agp, get_hourly_trends and get_controliq_review outputs for one
+ * window, each with the evidence behind it (days, and readings or automatic
+ * corrections). A part that errored is skipped. Wording describes; it never
+ * suggests a setting. Times are the pump clock.
+ * Returns { items: [{ kind, title, detail, days, readings, events }], caveat }.
+ */
+export function whatStandsOut({ agp, hourly, controlIq } = {}) {
+  const items = [];
+  const ok = (x) => x && !x.error;
+  const unit = (ok(agp) && agp.unit) || (ok(hourly) && hourly.unit) || 'mmol/L';
+  const mg = unit === 'mg/dL';
+  const fmt = (v) => (mg ? String(Math.round(v)) : v.toFixed(1));
+  const th = ok(agp) ? agp.consensusThresholds : mg ? { veryLow: 54, low: 70, high: 180, veryHigh: 250 } : { veryLow: 3, low: 3.9, high: 10, veryHigh: 13.9 };
+  const rows = ok(hourly) ? hourly.byHour.filter((h) => h.readings) : [];
+  const byHour = new Map(rows.map((h) => [h.hourNum, h]));
+  const hh = (h) => `${String(h).padStart(2, '0')}:00`;
+  // Highest value of f over rows; ties go to the earliest hour.
+  const top = (list, f) => list.reduce((best, x) => (f(x) > f(best) ? x : best), list[0]);
+
+  const slots = ok(agp) ? agp.slots.filter((x) => x.n && x.p50 != null) : [];
+  if (slots.length) {
+    const s = top(slots, (x) => x.p50);
+    const h = byHour.get(Math.floor((s.slot * agp.slotMinutes) / 60));
+    items.push({
+      kind: 'highestMedian',
+      title: `Highest median at ${s.time}`,
+      detail: `${fmt(s.p50)} ${unit}; a quarter of readings around then are above ${fmt(s.p75)}.`,
+      days: h?.days ?? null, readings: s.n, events: null,
+    });
+  }
+  if (rows.length) {
+    const below = (h) => h.consensusBands.low + h.consensusBands.veryLow;
+    const above = (h) => h.consensusBands.high + h.consensusBands.veryHigh;
+    const lo = top(rows, below), hi = top(rows, above);
+    const allDays = Math.max(...rows.map((h) => h.days ?? 0));
+    const allReadings = rows.reduce((a, h) => a + h.readings, 0);
+    if (below(lo) > 0) {
+      const vl = lo.consensusBands.veryLow;
+      items.push({
+        kind: 'mostBelow',
+        title: `Most time below range at ${hh(lo.hourNum)}`,
+        detail: `${r1(below(lo))} % of that hour's readings are under ${fmt(th.low)} ${unit}${vl > 0 ? `, ${r1(vl)} % under ${fmt(th.veryLow)}` : ''}.`,
+        days: lo.days ?? null, readings: lo.readings, events: null,
+      });
+    } else {
+      items.push({ kind: 'noneBelow', title: 'No time below range in any hour', detail: `No reading under ${fmt(th.low)} ${unit} in this window.`, days: allDays, readings: allReadings, events: null });
+    }
+    if (above(hi) > 0) {
+      items.push({
+        kind: 'mostAbove',
+        title: `Most time above range at ${hh(hi.hourNum)}`,
+        detail: `${r1(above(hi))} % of that hour's readings are over ${fmt(th.high)} ${unit}.`,
+        days: hi.days ?? null, readings: hi.readings, events: null,
+      });
+    }
+  }
+  const n = ok(controlIq) ? controlIq.summary?.completeDays : 0;
+  if (n) {
+    const ranked = [...controlIq.byHour].sort((a, b) => b.autoBolus.daysWithAutoBolus - a.autoBolus.daysWithAutoBolus || b.autoBolus.count - a.autoBolus.count || a.hour - b.hour);
+    const c = ranked[0];
+    if (c?.autoBolus.count) {
+      items.push({
+        kind: 'mostCorrections',
+        title: `Control-IQ corrects most often at ${hh(c.hour)}`,
+        detail: `Automatic corrections in that hour on ${c.autoBolus.daysWithAutoBolus} of ${n} complete days, ${c.autoBolus.count} in all (${c.autoBolus.units} U).`,
+        days: n, readings: null, events: c.autoBolus.count,
+      });
+    }
+  }
+  return { items, caveat: CONTROLIQ_CAVEAT };
+}
 const confidenceFor = (n) => (n >= 14 ? 'high' : n >= 7 ? 'medium' : 'low');
 
 /**
