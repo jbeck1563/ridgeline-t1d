@@ -489,9 +489,9 @@ function drawStack() {
     const over = band.over(b);
     out += `<rect x="0" y="${top}" width="${bw}" height="${Math.max(0, h)}" fill="${band.color}"/>`;
     out += `<path d="M${bw + 2} ${mid} L${bw + 14} ${mid} L${bw + 22} ${ry}" fill="none" stroke="var(--line)"/>`;
-    out += T(bw + 28, ry - 3, band.label, { fill: 'var(--color-ink)', size: 13 }) + T(bw + 36 + band.label.length * 8, ry - 3, isMgdl() ? band.mgdl : band.mmol, { size: 11 });
+    out += T(bw + 28, ry - 3, band.label, { fill: 'var(--color-ink)', size: 12 }) + T(bw + 34 + band.label.length * 7, ry - 3, isMgdl() ? band.mgdl : band.mmol, { size: 10.5 });
     out += T(bw + 28, ry + 13, `target ${band.target}`, { size: 10.5, fill: over ? 'var(--high)' : 'var(--muted)' });
-    out += T(W - 2, ry - 2, `${over ? '! ' : ''}${num(v)} %`, { anchor: 'end', size: 15, fill: over ? 'var(--high)' : 'var(--color-ink)', weight: 500 });
+    out += T(W - 2, ry - 2, `${over ? '! ' : ''}${num(v)} %`, { anchor: 'end', size: 12, fill: over ? 'var(--high)' : 'var(--color-ink)', weight: 500 });
   });
   el.innerHTML = svgEl(W, H, out, `Time in ranges: ${BANDS.map((x) => `${x.label} ${num(b[x.k])} %`).join(', ')}`);
 }
@@ -513,8 +513,10 @@ function drawAgp(mini) {
   let s = `<rect x="${L}" y="${y(c.high)}" width="${W - L - R}" height="${y(c.low) - y(c.high)}" fill="var(--ok)" opacity="0.12"/>`;
   for (const v of [c.low, c.high]) s += `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="var(--ok)"/>`;
   s += `<line x1="${L}" x2="${W - R}" y1="${y(c.veryLow)}" y2="${y(c.veryLow)}" stroke="var(--vlow)" stroke-dasharray="3 3"/><line x1="${L}" x2="${W - R}" y1="${y(c.veryHigh)}" y2="${y(c.veryHigh)}" stroke="var(--vhigh)" stroke-dasharray="3 3"/>`;
-  for (const v of [c.veryLow, c.low, c.high, c.veryHigh]) s += T(L - 6, y(v) + 4, num(v, mg ? 0 : 1), { anchor: 'end', size: 11 });
-  s += T(L - 6, y(yMax) + 4, String(yMax), { anchor: 'end', size: 11 });
+  // Labels at least 11 px apart: 3.0 and 3.9 sit close on a short plot.
+  const gap = Math.max(0, 11 - (y(c.veryLow) - y(c.low))) / 2;
+  for (const [v, dy] of [[c.veryLow, gap], [c.low, -gap], [c.high, 0], [c.veryHigh, 0]]) s += T(L - 6, y(v) + 4 + dy, num(v, mg ? 0 : 1), { anchor: 'end', size: 11 });
+  s += T(L - 6, y(yMax) + 4, String(yMax), { anchor: 'end', size: 11 }) + T(L + 4, Tp + 10, a.unit, { size: 10 });
   for (let h = 0; h <= 24; h += 3) {
     s += `<line x1="${x(h * 60)}" x2="${x(h * 60)}" y1="${Tp}" y2="${H - B}" stroke="var(--line)" opacity="0.6"/>`;
     if (!(compact && W < 640) || h % 6 === 0) s += T(x(h * 60), H - 8, String(h).padStart(2, '0'), { anchor: 'middle', size: 11 });
@@ -578,6 +580,7 @@ function drawHours() {
       }
       s += '</g>';
     }
+    for (const v of [0, 50]) s += T(L - 6, top + ch - (v / 100) * ch + 4, v ? '50%' : '0', { anchor: 'end', size: 10 });
     $('hourBands').innerHTML = svgEl(W, H, s + axis(top, top + ch), `Time in ranges for each clock hour: ${tir.map((v, h) => `${hh(h)} ${v ?? 'no data'}${v == null ? '' : ' %'}`).join(', ')}`);
   } else $('hourBands').innerHTML = '';
   if (!ciqOn) return;
@@ -592,7 +595,7 @@ function drawHours() {
       const hgt = (counts[i] / max) * ch;
       if (hgt) s += `<rect x="${x(i) + cw * 0.18}" y="${top + ch - hgt}" width="${cw * 0.64}" height="${hgt}" rx="2" fill="var(--color-accent)"><title>${hh(i)}: ${counts[i]} automatic corrections on ${h.autoBolus.daysWithAutoBolus} of ${n} days</title></rect>`;
     });
-    s += `<line x1="${L}" x2="${W - R}" y1="${top + ch}" y2="${top + ch}" stroke="var(--line)"/>` + T(L - 6, top + 8, String(max), { anchor: 'end', size: 10 });
+    s += `<line x1="${L}" x2="${W - R}" y1="${top + ch}" y2="${top + ch}" stroke="var(--line)"/><line x1="${L}" x2="${W - R}" y1="${top}" y2="${top}" stroke="var(--line)" opacity="0.6"/>` + T(L - 6, top + 8, String(max), { anchor: 'end', size: 10 }) + T(L - 6, top + ch, '0', { anchor: 'end', size: 10 });
     const [r1, h1] = valueRow(top + ch + 3, 'n', counts.map((c) => c || null), () => 'var(--color-ink)');
     const [r2, h2] = valueRow(top + ch + 3 + h1, 'days', bh.map((h) => h.autoBolus.daysWithAutoBolus || null));
     const bottom = top + ch + 3 + h1 + h2;
@@ -1127,7 +1130,8 @@ function drawDay(el, d) {
   const ly = gBot + evH + 4, bolH = user.length ? 10 + 12 * (Math.max(...bolRows) + 1) : 16;
   const ry = ly + bolH + 2, rib = 6, H = ry + rib + 16;
   let s = `<rect x="${L}" y="${y(hi)}" width="${W - L - R}" height="${y(lo) - y(hi)}" fill="var(--ok)" opacity="0.12"/>`;
-  for (const v of [lo, hi]) s += T(L - 5, y(v) + 4, String(v), { anchor: 'end', size: 10 });
+  for (const v of [lo, hi]) s += `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)" opacity="0.6"/>` + T(L - 5, y(v) + 4, String(v), { anchor: 'end', size: 10 });
+  s += T(L + 3, top + 10, config.unit, { size: 10 });
   for (let h = 0; h <= 24; h += 6) s += `<line x1="${x(h * 60)}" x2="${x(h * 60)}" y1="${top}" y2="${ry + rib}" stroke="var(--line)" opacity="0.5"/>` + T(x(h * 60), H - 2, String(h).padStart(2, '0'), { anchor: h === 24 ? 'end' : h ? 'middle' : 'start', size: 10 });
   d.events.forEach((e, i) => {
     s += `<line x1="${x(e.m)}" x2="${x(e.m)}" y1="${top}" y2="${gBot + evH}" stroke="var(--color-ink-2)" stroke-dasharray="2 3"/>` + T(x(e.m) + 3, gBot + 10 + 12 * evRows[i], e.kind, { size: 10, fill: 'var(--color-ink-2)' });
@@ -1260,7 +1264,7 @@ function drawDailyTdd() {
     s += '</g>' + T(x(i) + cw / 2, y(Math.max(d.totalDailyDose, y0)) - 4, `${num(d.totalDailyDose, 0)}${d.complete ? '' : '*'}`, { anchor: 'middle', size: 10, fill: d.complete ? 'var(--color-ink-2)' : 'var(--muted)' });
     const dt = new Date(d.date + 'T00:00:00Z');
     if (dt.getUTCDay() === 1 || i === 0) s += T(x(i) + cw / 2, H - 16, wkLabel(d.date), { anchor: i === 0 ? 'start' : 'middle', size: 10 }) + `<line x1="${x(i)}" x2="${x(i)}" y1="${top}" y2="${y(0)}" stroke="var(--line)" opacity="0.5"/>`;
-    s += T(x(i) + cw / 2, H - 3, DOW[dt.getUTCDay()].slice(0, 1), { anchor: 'middle', size: 9.5 });
+    s += T(x(i) + cw / 2, H - 3, DOW[dt.getUTCDay()].slice(0, 1), { anchor: 'middle', size: 10 });
   });
   const line = roll.map((v, i) => (v == null ? null : `${x(i) + cw / 2},${y(v)}`));
   // One polyline per run of days that have a mean, so gaps stay gaps.
